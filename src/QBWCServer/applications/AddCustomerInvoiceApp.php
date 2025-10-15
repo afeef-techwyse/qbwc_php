@@ -6,7 +6,7 @@ use QBWCServer\response\ReceiveResponseXML;
 use QBWCServer\response\SendRequestXML;
 
 /**
- * Unified application to process Shopify orders:
+ * Unified application to process Shopify orders using PostgreSQL:
  * 1. Get next pending order from DB
  * 2. CustomerQuery -> if missing -> CustomerAdd
  * 3. InvoiceAdd
@@ -18,13 +18,28 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $customerName;
     private $customerExists = false;
 
+    private function getPDO()
+    {
+        // PostgreSQL connection
+        $host = 'dpg-d3nn2ik9c44c73ee0dv0-a';
+        $port = '5432';
+        $dbname = 'db_integration';
+        $user = 'techwyse_shopify_ptl_user';
+        $password = 'FCXBB31x04qZ7TQZ4JG7IBa0IFKScNbY'; // Use your actual password here
+
+        return new \PDO("pgsql:host=$host;port=$port;dbname=$dbname", $user, $password, [
+            \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+            \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+        ]);
+    }
+
     public function sendRequestXML($object)
     {
         // Load the next order if not already loaded
         if (!$this->currentOrder) {
-            $pdo = new \PDO("mysql:host=localhost;dbname=mseet_40172767_qb_integration", "mseet_40172767", "Tech@142536");
+            $pdo = $this->getPDO();
             $stmt = $pdo->query("SELECT * FROM orders_queue WHERE status='pending' LIMIT 1");
-            $this->currentOrder = $stmt->fetch(\PDO::FETCH_ASSOC);
+            $this->currentOrder = $stmt->fetch();
 
             if (!$this->currentOrder) {
                 // Nothing to do
@@ -37,11 +52,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         $order = json_decode($this->currentOrder['payload'], true);
-
         $qbxmlVersion = $this->_config['qbxmlVersion'];
 
         if ($this->stage === 'query_customer') {
-            // Step 1: Query Customer
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -56,7 +69,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_customer') {
-            // Step 2: Add Customer
             $cust = $order['customer'];
 
             $xml = '<?xml version="1.0" encoding="utf-8"?>
@@ -87,7 +99,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_invoice') {
-            // Step 3: Add Invoice
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -125,28 +136,25 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $response = simplexml_load_string($object->response);
 
         if ($this->stage === 'query_customer') {
-            // Check QB response for existing customer
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
                 $this->customerExists = true;
-                $this->stage = 'add_invoice'; // Skip customer add
+                $this->stage = 'add_invoice';
             } else {
                 $this->customerExists = false;
                 $this->stage = 'add_customer';
             }
-            return new ReceiveResponseXML(50); // Ask QBWC for next sendRequestXML in same cycle
+            return new ReceiveResponseXML(50);
         }
 
         if ($this->stage === 'add_customer') {
-            // After adding customer, next step is invoice
             $this->stage = 'add_invoice';
             return new ReceiveResponseXML(50);
         }
 
         if ($this->stage === 'add_invoice') {
-            // After invoice, mark order as processed
             $this->updateStatus($this->currentOrder['id'], 'invoice_done');
             $this->reset();
-            return new ReceiveResponseXML(100); // Done for this cycle
+            return new ReceiveResponseXML(100);
         }
 
         return new ReceiveResponseXML(100);
@@ -154,7 +162,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     private function updateStatus($id, $status)
     {
-        $pdo = new \PDO("mysql:host=localhost;dbname=mseet_40172767_qb_integration", "mseet_40172767", "Tech@142536");
+        $pdo = $this->getPDO();
         $stmt = $pdo->prepare("UPDATE orders_queue SET status=:status WHERE id=:id");
         $stmt->execute([':status' => $status, ':id' => $id]);
     }
