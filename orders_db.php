@@ -23,7 +23,7 @@ try {
     }
 
     // Database connection
-    $dsn = "mysql:host=mysql.railway.internal1;dbname=railway;charset=utf8mb4";
+    $dsn = "mysql:host=mysql.railway.internal;dbname=railway;charset=utf8mb4";
     $username = "root";
     $password = "wTVIYIVbAlJdCqIwbHigEVotdGKGdHNA";
 
