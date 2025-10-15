@@ -1,20 +1,28 @@
 FROM php:7.4-apache
 
-# Install required system packages and PHP extensions
 RUN apt-get update && apt-get install -y \
+    git \
+    zip \
+    unzip \
     libxml2-dev \
-    && docker-php-ext-install soap mysqli pdo_mysql openssl
+    libssl-dev \
+    && docker-php-ext-install soap mysqli pdo pdo_mysql \
+    && rm -rf /var/lib/apt/lists/*
 
-# Enable Apache rewrite module (optional, for .htaccess or routing)
-RUN a2enmod rewrite
+# 3️⃣ Copy Composer binary from official Composer image
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Copy your project files
-COPY . /var/www/html/
+# 4️⃣ Set working directory
+WORKDIR /var/www/html
 
-# Set working directory
-WORKDIR /var/www/html/
+# 5️⃣ Copy all project files
+COPY . .
 
-# Expose the default Apache port
+# 6️⃣ Install PHP dependencies via Composer
+RUN composer install --no-dev --optimize-autoloader
+
+# 7️⃣ Expose Apache port
 EXPOSE 80
 
-RUN composer install --no-dev --optimize-autoloader
+# 8️⃣ Start Apache server
+CMD ["apache2-foreground"]
