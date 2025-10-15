@@ -23,7 +23,7 @@ try {
     }
 
     // Database connection
-    $dsn = "mysql:host=mysql.railway.internal;dbname=railway;charset=utf8mb4";
+    $dsn = "mysql:host=shortline.proxy.rlwy.net;port=53111;dbname=railway;charset=utf8mb4";
     $username = "root";
     $password = "wTVIYIVbAlJdCqIwbHigEVotdGKGdHNA";
 
