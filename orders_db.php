@@ -8,7 +8,7 @@ if (!$orderData) {
     exit('Invalid data');
 }
 
-$pdo = new PDO("mysql:host=sql5.freesqldatabase.com;dbname=sql5802997","sql5802997","8jhmVbi8lN");
+$pdo = new PDO("mysql:host=mysql.railway.internal1;dbname=railway","root","wTVIYIVbAlJdCqIwbHigEVotdGKGdHNA");
 $stmt = $pdo->prepare("
     INSERT INTO orders_queue (shopify_order_id, payload, status)
     VALUES (:oid, :payload, 'pending')
