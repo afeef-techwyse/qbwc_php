@@ -99,7 +99,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         $order = $this->orders[$this->currentOrderIndex];
         $this->customerName = trim($order['customer']['first_name'] . ' ' . $order['customer']['last_name']);
-        $qbxmlVersion = $this->_config['qbxmlVersion'];
+        
+        // Get QBXML version from request parameters
+        $qbxmlVersion = $object->qbXMLMajorVers . "." . $object->qbXMLMinorVers;
 
         $this->log("Stage: {$this->stage} -- Order: {$order['order_number']} (Customer: {$this->customerName})");
 
@@ -109,7 +111,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
     <CustomerQueryRq requestID="' . $this->generateGUID() . '">
-      <FullName>' . htmlentities($this->customerName) . '</FullName>
+      <FullName>' . htmlspecialchars($this->customerName, ENT_XML1, 'UTF-8') . '</FullName>
     </CustomerQueryRq>
   </QBXMLMsgsRq>
 </QBXML>';
@@ -127,19 +129,19 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   <QBXMLMsgsRq onError="stopOnError">
     <CustomerAddRq requestID="' . $this->generateGUID() . '">
       <CustomerAdd>
-        <Name>' . htmlentities($this->customerName) . '</Name>
-        <CompanyName>' . htmlentities($addr['company']) . '</CompanyName>
-        <FirstName>' . htmlentities($cust['first_name']) . '</FirstName>
-        <LastName>' . htmlentities($cust['last_name']) . '</LastName>
+        <Name>' . htmlspecialchars($this->customerName, ENT_XML1, 'UTF-8') . '</Name>
+        <CompanyName>' . htmlspecialchars($addr['company'] ?? '', ENT_XML1, 'UTF-8') . '</CompanyName>
+        <FirstName>' . htmlspecialchars($cust['first_name'], ENT_XML1, 'UTF-8') . '</FirstName>
+        <LastName>' . htmlspecialchars($cust['last_name'], ENT_XML1, 'UTF-8') . '</LastName>
         <BillAddress>
-          <Addr1>' . htmlentities($addr['address1']) . '</Addr1>
-          <City>' . htmlentities($addr['city']) . '</City>
-          <State>' . htmlentities($addr['province']) . '</State>
-          <PostalCode>' . htmlentities($addr['zip']) . '</PostalCode>
-          <Country>' . htmlentities($addr['country']) . '</Country>
+          <Addr1>' . htmlspecialchars($addr['address1'], ENT_XML1, 'UTF-8') . '</Addr1>
+          <City>' . htmlspecialchars($addr['city'], ENT_XML1, 'UTF-8') . '</City>
+          <State>' . htmlspecialchars($addr['province'], ENT_XML1, 'UTF-8') . '</State>
+          <PostalCode>' . htmlspecialchars($addr['zip'], ENT_XML1, 'UTF-8') . '</PostalCode>
+          <Country>' . htmlspecialchars($addr['country'], ENT_XML1, 'UTF-8') . '</Country>
         </BillAddress>
-        <Email>' . htmlentities($cust['email']) . '</Email>
-        <Phone>' . htmlentities($cust['phone']) . '</Phone>
+        <Phone>' . htmlspecialchars($cust['phone'], ENT_XML1, 'UTF-8') . '</Phone>
+        <Email>' . htmlspecialchars($cust['email'], ENT_XML1, 'UTF-8') . '</Email>
       </CustomerAdd>
     </CustomerAddRq>
   </QBXMLMsgsRq>
