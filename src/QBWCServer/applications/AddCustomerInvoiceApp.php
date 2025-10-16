@@ -187,7 +187,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     /**
      * Required for login
      */
-    public function authenticate($username, $password)
+    public function authenticate($strUserName, $strPassword)
     {
         // your QBWC credentials
         if ($username === 'Admin' && $password === '1') {
