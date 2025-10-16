@@ -217,9 +217,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     }
 
     /**
-     * Required SOAP method - returns server version
+     * Required SOAP method - handles server version
      */
-    public function serverVersion($ticket = '')
+    public function serverVersion($object)
     {
         return "PHP QuickBooks SOAP Server v1.0";
     }
@@ -227,46 +227,32 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     /**
      * Required SOAP method - handles client version verification
      */
-    public function clientVersion($version, $ticket = '')
+    public function clientVersion($object)
     {
         return '';
     }
 
     /**
-     * Required SOAP method - handles authentication
+     * Required SOAP method - handles connection error
      */
-    public function authenticate($object)
+    public function connectionError($object)
     {
-        $username = $object->strUserName ?? '';
-        $password = $object->strPassword ?? '';
+        return 'done';
+    }
 
-        if ($username === 'Admin' && $password === '1') {
-            $ticket = $this->generateGUID();
-            return [
-                $ticket,  // Ticket
-                '',       // Company file (empty means default)
-                0,       // Wait before next update (0 means no delay)
-                600     // Min run every N seconds
-            ];
-        }
-        return ['', 'nvu', 0, 0];
+    /**
+     * Required SOAP method - handles last error
+     */
+    public function getLastError($object)
+    {
+        return 'No error';
     }
 
     /**
      * Required SOAP method - handles connection closing
      */
-    public function closeConnection($ticket)
+    public function closeConnection($object)
     {
         return 'OK';
-    }
-
-    public function connectionError($ticket, $hresult, $message) 
-    {
-        return 'done';
-    }
-
-    public function getLastError($ticket)
-    {
-        return 'No error';
     }
 }
