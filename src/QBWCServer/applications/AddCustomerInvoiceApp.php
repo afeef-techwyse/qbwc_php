@@ -5,7 +5,7 @@ use QBWCServer\base\AbstractQBWCApplication;
 use QBWCServer\response\ReceiveResponseXML;
 use QBWCServer\response\SendRequestXML;
 
-class AddShopifyOrdersApp extends AbstractQBWCApplication
+class AddCustomerInvoiceApp extends AbstractQBWCApplication
 {
     // Static orders array for testing
     private $orders = [
