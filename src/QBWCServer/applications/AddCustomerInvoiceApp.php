@@ -235,9 +235,12 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     /**
      * Required SOAP method - handles authentication
      */
-    public function authenticate($login, $password)
+    public function authenticate($object)
     {
-        if ($login === 'Admin' && $password === '1') {
+        $username = $object->strUserName ?? '';
+        $password = $object->strPassword ?? '';
+
+        if ($username === 'Admin' && $password === '1') {
             $ticket = $this->generateGUID();
             return [
                 $ticket,  // Ticket
