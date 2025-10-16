@@ -18,30 +18,47 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $customerName;
     private $customerExists = false;
 
+    private function getPDO()
+    {
+        return new \PDO(
+            "mysql:host=sql5.freesqldatabase.com;dbname=sql5802997",
+            "sql5802997",
+            "8jhmVbi8lN",
+            [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
+        );
+    }
+
     public function sendRequestXML($object)
     {
         // Load the next order if not already loaded
         if (!$this->currentOrder) {
-            $pdo = new \PDO("mysql:host=sql5.freesqldatabase.com;dbname=sql5802997","sql5802997","8jhmVbi8lN");
-            $stmt = $pdo->query("SELECT * FROM orders_queue WHERE status='pending' LIMIT 1");
+            $pdo = $this->getPDO();
+            // Pick the next active order (pending or mid-stage)
+            $stmt = $pdo->query("
+                SELECT * FROM orders_queue 
+                WHERE status IN ('pending','query_customer','add_customer','add_invoice') 
+                ORDER BY id ASC 
+                LIMIT 1
+            ");
             $this->currentOrder = $stmt->fetch(\PDO::FETCH_ASSOC);
 
             if (!$this->currentOrder) {
-                // Nothing to do
+                // No orders left to process
                 return new SendRequestXML('');
             }
 
             $order = json_decode($this->currentOrder['payload'], true);
-            $this->customerName =
-                trim($order['customer']['first_name'] . ' ' . $order['customer']['last_name']);
+            $this->customerName = trim($order['customer']['first_name'] . ' ' . $order['customer']['last_name']);
+            $this->stage = $this->currentOrder['status']; // Resume from saved stage
         }
 
         $order = json_decode($this->currentOrder['payload'], true);
-
         $qbxmlVersion = $this->_config['qbxmlVersion'];
 
-        if ($this->stage === 'query_customer') {
-            // Step 1: Query Customer
+        // STAGE 1: Query existing customer
+        if ($this->stage === 'pending' || $this->stage === 'query_customer') {
+            $this->updateStatus($this->currentOrder['id'], 'query_customer');
+
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -51,12 +68,13 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     </CustomerQueryRq>
   </QBXMLMsgsRq>
 </QBXML>';
-
             return new SendRequestXML($xml);
         }
 
+        // STAGE 2: Add customer if missing
         if ($this->stage === 'add_customer') {
-            // Step 2: Add Customer
+            $this->updateStatus($this->currentOrder['id'], 'add_customer');
+
             $cust = $order['customer'];
 
             $xml = '<?xml version="1.0" encoding="utf-8"?>
@@ -70,24 +88,25 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         <FirstName>' . htmlentities($cust['first_name']) . '</FirstName>
         <LastName>' . htmlentities($cust['last_name']) . '</LastName>
         <BillAddress>
-          <Addr1>' . htmlentities($cust['default_address']['address1']) . '</Addr1>
-          <City>' . htmlentities($cust['default_address']['city']) . '</City>
-          <State>' . htmlentities($cust['default_address']['province']) . '</State>
-          <PostalCode>' . htmlentities($cust['default_address']['zip']) . '</PostalCode>
-          <Country>' . htmlentities($cust['default_address']['country']) . '</Country>
+          <Addr1>' . htmlentities($cust['default_address']['address1'] ?? '') . '</Addr1>
+          <City>' . htmlentities($cust['default_address']['city'] ?? '') . '</City>
+          <State>' . htmlentities($cust['default_address']['province'] ?? '') . '</State>
+          <PostalCode>' . htmlentities($cust['default_address']['zip'] ?? '') . '</PostalCode>
+          <Country>' . htmlentities($cust['default_address']['country'] ?? '') . '</Country>
         </BillAddress>
-        <Email>' . htmlentities($cust['email']) . '</Email>
-        <Phone>' . htmlentities($cust['phone']) . '</Phone>
+        <Email>' . htmlentities($cust['email'] ?? '') . '</Email>
+        <Phone>' . htmlentities($cust['phone'] ?? '') . '</Phone>
       </CustomerAdd>
     </CustomerAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
-
             return new SendRequestXML($xml);
         }
 
+        // STAGE 3: Add invoice
         if ($this->stage === 'add_invoice') {
-            // Step 3: Add Invoice
+            $this->updateStatus($this->currentOrder['id'], 'add_invoice');
+
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -113,10 +132,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     </InvoiceAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
-
             return new SendRequestXML($xml);
         }
 
+        // Default (shouldn’t reach here)
         return new SendRequestXML('');
     }
 
@@ -124,37 +143,49 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     {
         $response = simplexml_load_string($object->response);
 
-        if ($this->stage === 'query_customer') {
-            // Check QB response for existing customer
-            if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
-                $this->customerExists = true;
-                $this->stage = 'add_invoice'; // Skip customer add
-            } else {
-                $this->customerExists = false;
-                $this->stage = 'add_customer';
-            }
-            return new ReceiveResponseXML(50); // Ask QBWC for next sendRequestXML in same cycle
+        if (!$this->currentOrder) {
+            // Safety: reload current order (in case of stateless call)
+            $pdo = $this->getPDO();
+            $stmt = $pdo->query("SELECT * FROM orders_queue WHERE status IN ('query_customer','add_customer','add_invoice') ORDER BY id ASC LIMIT 1");
+            $this->currentOrder = $stmt->fetch(\PDO::FETCH_ASSOC);
+            if (!$this->currentOrder) return new ReceiveResponseXML(100);
         }
 
+        // 1️⃣ After CustomerQuery
+        if ($this->stage === 'query_customer' || $this->stage === 'pending') {
+            if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
+                // Customer already exists
+                $this->updateStatus($this->currentOrder['id'], 'add_invoice');
+                $this->stage = 'add_invoice';
+            } else {
+                // Need to add customer
+                $this->updateStatus($this->currentOrder['id'], 'add_customer');
+                $this->stage = 'add_customer';
+            }
+            return new ReceiveResponseXML(50);
+        }
+
+        // 2️⃣ After CustomerAdd
         if ($this->stage === 'add_customer') {
-            // After adding customer, next step is invoice
+            $this->updateStatus($this->currentOrder['id'], 'add_invoice');
             $this->stage = 'add_invoice';
             return new ReceiveResponseXML(50);
         }
 
+        // 3️⃣ After InvoiceAdd (final step)
         if ($this->stage === 'add_invoice') {
-            // After invoice, mark order as processed
             $this->updateStatus($this->currentOrder['id'], 'invoice_done');
             $this->reset();
-            return new ReceiveResponseXML(100); // Done for this cycle
+            return new ReceiveResponseXML(100); // Done for this order
         }
 
+        // Fallback
         return new ReceiveResponseXML(100);
     }
 
     private function updateStatus($id, $status)
     {
-        $pdo = new \PDO("mysql:host=sql5.freesqldatabase.com;dbname=sql5802997","sql5802997","8jhmVbi8lN");
+        $pdo = $this->getPDO();
         $stmt = $pdo->prepare("UPDATE orders_queue SET status=:status WHERE id=:id");
         $stmt->execute([':status' => $status, ':id' => $id]);
     }
