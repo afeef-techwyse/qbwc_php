@@ -215,4 +215,49 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             mt_rand(0, 0xffff), mt_rand(0, 0xffff), mt_rand(0, 0xffff)
         );
     }
+
+    /**
+     * Required SOAP method - returns server version
+     */
+    public function serverVersion($object)
+    {
+        return "PHP QtWebConnector 1.0";
+    }
+
+    /**
+     * Required SOAP method - handles client version verification
+     */
+    public function clientVersion($object)
+    {
+        return "";  // Return empty string to accept any client version
+    }
+
+    /**
+     * Required SOAP method - handles authentication
+     */
+    public function authenticate($object)
+    {
+        $username = $object->strUserName ?? '';
+        $password = $object->strPassword ?? '';
+
+        if ($username === 'Admin' && $password === '123') {
+            $ticket = $this->generateGUID();
+            return array(
+                $ticket,  // Ticket
+                '',       // Empty company file path
+                null,     // Optional wait time
+                null      // Optional min run time
+            );
+        }
+        
+        return array('', 'nvu', null, null);
+    }
+
+    /**
+     * Required SOAP method - handles connection closing
+     */
+    public function closeConnection($object)
+    {
+        return "Connection closed";
+    }
 }
