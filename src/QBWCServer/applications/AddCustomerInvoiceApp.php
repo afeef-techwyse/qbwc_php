@@ -20,9 +20,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $customerExists = false;
 
     // === DATABASE CONFIG ===
-    private $dsn = "mysql:host=sql5.freesqldatabase.com;dbname=sql5802997";
-    private $user = "sql5802997";
-    private $pass = "8jhmVbi8lN";
+    private $dsn = "mysql:host=shortline.proxy.rlwy.net;port=53111;dbname=railway";
+    private $user = "root";
+    private $pass = "wTVIYIVbAlJdCqIwbHigEVotdGKGdHNA";
 
     /**
      * Step 1: Called by QBWC to send QBXML.
@@ -190,7 +190,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     public function authenticate($username, $password)
     {
         // your QBWC credentials
-        if ($username === 'Admin' && $password === '123') {
+        if ($username === 'Admin' && $password === '1') {
             return ['SESSION123', ''];
         } else {
             return ['none', 'nvu'];
