@@ -204,7 +204,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $this->customerName = '';
     }
 
-    private function generateGUID()
+    // Change from private to public
+    public function generateGUID()
     {
         return sprintf('%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
             mt_rand(0, 0xffff), mt_rand(0, 0xffff),
