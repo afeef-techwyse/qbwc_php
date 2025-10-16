@@ -240,7 +240,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $username = $object->strUserName ?? '';
         $password = $object->strPassword ?? '';
 
-        if ($username === 'Admin' && $password === '123') {
+        if ($username === 'Admin' && $password === '1') {
             $ticket = $this->generateGUID();
             return array(
                 $ticket,  // Ticket
