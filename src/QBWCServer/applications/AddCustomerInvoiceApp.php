@@ -5,7 +5,7 @@ use QBWCServer\base\AbstractQBWCApplication;
 use QBWCServer\response\ReceiveResponseXML;
 use QBWCServer\response\SendRequestXML;
 
-class AddCustomerInvoiceApp extends AbstractQBWCApplication
+class AddCustomerInvoiceApp extends AbstractQBWCApplication 
 {
     private $dsn = "mysql:host=shortline.proxy.rlwy.net;port=53111;dbname=railway";
     private $dbUser = "root"; 
@@ -34,10 +34,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         return $p;
     }
 
-    public function sendRequestXML($object)
+    public function sendRequestXML($ticket)
     {
         // Get QBXML version from request parameters
-        $qbxmlVersion = $object->qbXMLMajorVers . "." . $object->qbXMLMinorVers;
+        $qbxmlVersion = $ticket->qbXMLMajorVers . "." . $ticket->qbXMLMinorVers;
 
         // If no current order, try to fetch next from DB
         if (!$this->currentOrder) {
@@ -135,13 +135,13 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         return new SendRequestXML('');
     }
 
-    public function receiveResponseXML($object)
+    public function receiveResponseXML($response)
     {
-        if (!$object->response) {
+        if (!$response) {
             return new ReceiveResponseXML(100);
         }
 
-        $response = simplexml_load_string($object->response);
+        $response = simplexml_load_string($response);
 
         if ($this->stage === 'query_customer') {
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
@@ -219,45 +219,51 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     /**
      * Required SOAP method - returns server version
      */
-    public function serverVersion($object)
+    public function serverVersion($ticket = '')
     {
-        return "PHP QtWebConnector 1.0";
+        return "PHP QuickBooks SOAP Server v1.0";
     }
 
     /**
      * Required SOAP method - handles client version verification
      */
-    public function clientVersion($object)
+    public function clientVersion($version, $ticket = '')
     {
-        return "";  // Return empty string to accept any client version
+        return '';
     }
 
     /**
      * Required SOAP method - handles authentication
      */
-    public function authenticate($object)
+    public function authenticate($login, $password)
     {
-        $username = $object->strUserName ?? '';
-        $password = $object->strPassword ?? '';
-
-        if ($username === 'Admin' && $password === '1') {
+        if ($login === 'Admin' && $password === '1') {
             $ticket = $this->generateGUID();
-            return array(
+            return [
                 $ticket,  // Ticket
-                '',       // Empty company file path
-                null,     // Optional wait time
-                null      // Optional min run time
-            );
+                '',       // Company file (empty means default)
+                0,       // Wait before next update (0 means no delay)
+                600     // Min run every N seconds
+            ];
         }
-        
-        return array('', 'nvu', null, null);
+        return ['', 'nvu', 0, 0];
     }
 
     /**
      * Required SOAP method - handles connection closing
      */
-    public function closeConnection($object)
+    public function closeConnection($ticket)
     {
-        return "Connection closed";
+        return 'OK';
+    }
+
+    public function connectionError($ticket, $hresult, $message) 
+    {
+        return 'done';
+    }
+
+    public function getLastError($ticket)
+    {
+        return 'No error';
     }
 }
