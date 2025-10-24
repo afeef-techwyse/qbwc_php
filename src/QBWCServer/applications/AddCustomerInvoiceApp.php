@@ -1,3 +1,5 @@
+
+
 <?php
 namespace QBWCServer\applications;
 
@@ -106,20 +108,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     // ---------------------- Logging ----------------------
     private function log($msg) {
         $ts = date('Y-m-d H:i:s');
-        $line = "[$ts] " . self::LOG_TAG . ": $msg";
-        // If env var LOG_TO_STDERR is set (e.g., on Railway), log to stderr so platform logs capture it
-        $toStderr = getenv('LOG_TO_STDERR');
-        if ($toStderr && $toStderr !== '0' && strtolower($toStderr) !== 'false') {
-            error_log($line);
-            return;
-        }
-        // Otherwise log to file in repo
-        $path = $this->getLogPath();
-        $dir = dirname($path);
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0777, true);
-        }
-        error_log($line . "\n", 3, $path);
+        $line = "[$ts] " . self::LOG_TAG . ": $msg" . PHP_EOL;
+        // Write to a relative file in the executing script's directory
+        // Using append and lock to avoid truncation and reduce race conditions
+        @file_put_contents('app_debug.log', $line, FILE_APPEND | LOCK_EX);
     }
 
     // ---------------------- QBWC Methods ----------------------
@@ -405,9 +397,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     private function getLogPath(): string
     {
-        // Fixed log path inside repository for easier access
-        // c:\Afeef\PTL\GIT\qbwc_php\QBWCServer\log\app_debug.log
-        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'log' . DIRECTORY_SEPARATOR . self::LOG_FILENAME;
+        // Not used in current logging mode; kept for compatibility if needed later
+        return 'app_debug.log';
     }
 
     private function safeXmlForLog(string $xml): string
