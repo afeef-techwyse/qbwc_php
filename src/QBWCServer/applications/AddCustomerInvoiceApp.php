@@ -62,7 +62,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     // ---------------------- State Persistence ----------------------
     private function loadState() {
-        $path = '/tmp/qbwc_app_state.json';
+        $path = $this->getStateFilePath();
         if (file_exists($path)) {
             $state = json_decode(file_get_contents($path), true);
             if (is_array($state)) {
@@ -81,14 +81,57 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             'itemsToCheck' => $this->itemsToCheck,
             'currentItemIndex' => $this->currentItemIndex
         ];
-        file_put_contents('/tmp/qbwc_app_state.json', json_encode($state));
+        $path = $this->getStateFilePath();
+        file_put_contents($path, json_encode($state));
+    }
+
+    private function getStateFilePath() {
+        // For Railway deployment, use a persistent directory
+        // Try multiple locations for better compatibility
+        $possiblePaths = [
+            '/tmp/qbwc_app_state.json',
+            sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qbwc_app_state.json',
+            __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'log' . DIRECTORY_SEPARATOR . 'qbwc_app_state.json'
+        ];
+        
+        // Return the first writable path
+        foreach ($possiblePaths as $path) {
+            $dir = dirname($path);
+            if (is_writable($dir) || @mkdir($dir, 0755, true)) {
+                return $path;
+            }
+        }
+        
+        // Fallback to temp directory
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qbwc_app_state.json';
+    }
+
+    private function getDebugLogPath() {
+        // For Railway deployment, use a persistent directory
+        // Try multiple locations for better compatibility
+        $possiblePaths = [
+            '/tmp/qbwc_app_debug.log',
+            sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qbwc_app_debug.log',
+            __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'log' . DIRECTORY_SEPARATOR . 'qbwc_app_debug.log'
+        ];
+        
+        // Return the first writable path
+        foreach ($possiblePaths as $path) {
+            $dir = dirname($path);
+            if (is_writable($dir) || @mkdir($dir, 0755, true)) {
+                return $path;
+            }
+        }
+        
+        // Fallback to temp directory
+        return sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qbwc_app_debug.log';
     }
     private function resetState() {
         $this->currentOrderIndex = 0;
         $this->stage = 'query_customer';
         $this->itemsToCheck = [];
         $this->currentItemIndex = 0;
-        @unlink('/tmp/qbwc_app_state.json');
+        @unlink($this->getStateFilePath());
     }
 
     private function getUniqueItemsFromOrder($order) {
@@ -104,13 +147,29 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     // ---------------------- Logging ----------------------
     private function log($msg) {
         $ts = date('Y-m-d H:i:s');
-        error_log("[$ts] AddShopifyOrdersApp: $msg\n", 3, '/tmp/qbwc_app_debug.log');
+        $logPath = $this->getDebugLogPath();
+        
+        // Log to file if possible
+        if (@error_log("[$ts] AddCustomerInvoiceApp: $msg\n", 3, $logPath) === false) {
+            // Fallback to system error log if file logging fails
+            error_log("[$ts] AddCustomerInvoiceApp: $msg");
+        }
+        
+        // Also log to Railway's standard output for debugging
+        if (php_sapi_name() !== 'cli') {
+            echo "<!-- AddCustomerInvoiceApp: [$ts] $msg -->\n";
+        }
     }
 
     // ---------------------- QBWC Methods ----------------------
     public function sendRequestXML($object)
     {
         $this->loadState();
+        
+        // Log Railway environment info for debugging
+        $this->log("Railway Environment - PHP Version: " . PHP_VERSION . ", SAPI: " . php_sapi_name());
+        $this->log("State file path: " . $this->getStateFilePath());
+        $this->log("Debug log path: " . $this->getDebugLogPath());
 
         if ($this->currentOrderIndex >= count($this->orders)) {
             $this->log("All static orders processed. Nothing to send.");
