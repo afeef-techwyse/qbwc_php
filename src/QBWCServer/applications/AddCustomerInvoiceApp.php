@@ -255,7 +255,47 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 $this->saveState();
                 return new SendRequestXML($xml);
             } else {
-                // All items checked, move to invoice creation
+                // All items checked, move to creating missing items
+                $this->stage = 'create_items';
+                $this->saveState();
+                return $this->sendRequestXML($object);
+            }
+        }
+
+        if ($this->stage === 'create_items') {
+            // Create items that don't exist
+            if ($this->currentItemIndex < count($this->itemsToCheck)) {
+                $itemName = $this->itemsToCheck[$this->currentItemIndex];
+                $order = $this->orders[$this->currentOrderIndex];
+                $itemRate = 0;
+                
+                // Find the rate for this item
+                foreach ($order['line_items'] as $item) {
+                    if ($item['title'] === $itemName) {
+                        $itemRate = $item['rate'];
+                        break;
+                    }
+                }
+                
+                $xml = '<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="' . $qbxmlVersion . '"?>
+<QBXML>
+  <QBXMLMsgsRq onError="stopOnError">
+    <ItemServiceAddRq requestID="' . $this->generateGUID() . '">
+      <ItemServiceAdd>
+        <Name>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</Name>
+        <SalesOrPurchase>
+          <Price>' . (float)$itemRate . '</Price>
+        </SalesOrPurchase>
+      </ItemServiceAdd>
+    </ItemServiceAddRq>
+  </QBXMLMsgsRq>
+</QBXML>';
+                $this->log("Sending ItemServiceAddRq XML for item: $itemName\n$xml");
+                $this->saveState();
+                return new SendRequestXML($xml);
+            } else {
+                // All items created, move to invoice creation
                 $this->stage = 'add_invoice';
                 $this->saveState();
                 return $this->sendRequestXML($object);
@@ -341,7 +381,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             if (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemRet)) {
                 $this->log("Item '$itemName' EXISTS in QuickBooks.");
             } else {
-                $this->log("Item '$itemName' NOT FOUND in QuickBooks - Invoice creation may fail.");
+                $this->log("Item '$itemName' NOT FOUND in QuickBooks - Will create item.");
             }
             
             $this->currentItemIndex++;
@@ -349,7 +389,30 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 $this->saveState();
                 return new ReceiveResponseXML(50);
             } else {
-                $this->log("All items checked. Moving to invoice creation.");
+                $this->log("All items checked. Moving to create missing items.");
+                $this->stage = 'create_items';
+                $this->currentItemIndex = 0; // Reset for item creation
+                $this->saveState();
+                return new ReceiveResponseXML(50);
+            }
+        }
+
+        if ($this->stage === 'create_items') {
+            $itemName = $this->itemsToCheck[$this->currentItemIndex];
+            
+            // Check if item was created successfully
+            if (isset($response->QBXMLMsgsRs->ItemServiceAddRs->ItemServiceRet)) {
+                $this->log("Item '$itemName' CREATED successfully in QuickBooks.");
+            } else {
+                $this->log("Item '$itemName' creation FAILED - Invoice creation may fail.");
+            }
+            
+            $this->currentItemIndex++;
+            if ($this->currentItemIndex < count($this->itemsToCheck)) {
+                $this->saveState();
+                return new ReceiveResponseXML(50);
+            } else {
+                $this->log("All items created. Moving to invoice creation.");
                 $this->stage = 'add_invoice';
                 $this->saveState();
                 return new ReceiveResponseXML(50);
@@ -368,8 +431,11 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 
                 // Log the full response for debugging
                 $this->log("Full InvoiceAdd response: " . $object->response);
+            } else if (!empty($object->response)) {
+                $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']} - Response received but no detailed info available.");
+                $this->log("Full InvoiceAdd response: " . $object->response);
             } else {
-                $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']} - No detailed response available.");
+                $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']} - Empty response received.");
             }
             
             $this->currentOrderIndex++;
