@@ -58,7 +58,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $currentOrderIndex = 0;
     private $stage = 'query_customer';
     private $customerName;
-    private $currentItemIndex = 0; // -- NEW -- Tracks which line item we are processing
+    private $currentItemIndex = 0; // Tracks which line item we are processing
 
     // ---------------------- State Persistence ----------------------
     private function loadState()
@@ -69,14 +69,13 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             if (is_array($state)) {
                 $this->currentOrderIndex = $state['index'] ?? 0;
                 $this->stage = $state['stage'] ?? 'query_customer';
-                $this->currentItemIndex = $state['item_index'] ?? 0; // -- NEW --
+                $this->currentItemIndex = $state['item_index'] ?? 0;
             }
         }
     }
 
     private function saveState()
     {
-        // -- MODIFIED --
         $state = [
             'index' => $this->currentOrderIndex,
             'stage' => $this->stage,
@@ -87,7 +86,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     private function resetState()
     {
-        // -- MODIFIED --
         $this->currentOrderIndex = 0;
         $this->stage = 'query_customer';
         $this->currentItemIndex = 0;
@@ -165,8 +163,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             $this->saveState();
             return new SendRequestXML($xml);
         }
-
-        // -- NEW STAGE --
+        
         if ($this->stage === 'query_item') {
             // Check if we are done with items for this order
             if ($this->currentItemIndex >= count($order['line_items'])) {
@@ -193,8 +190,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 return new SendRequestXML($xml);
             }
         }
-
-        // -- NEW STAGE --
+        
         if ($this->stage === 'add_item') {
             $item = $order['line_items'][$this->currentItemIndex];
             $itemName = $item['title'];
@@ -203,7 +199,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             // --- ATTENTION ---
             // Adding as 'ItemService'.
             // You MUST change 'Services' to a valid 'Income' account in your QB file.
-            // This is the most common point of failure.
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -228,7 +223,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
 
         if ($this->stage === 'add_invoice') {
-            // -- MODIFIED -- Corrected htmlentities to htmlspecialchars
+            // Corrected htmlentities to htmlspecialchars
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -265,12 +260,26 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $this->loadState();
         $this->log("Received XML response:\n" . $object->response);
 
+        // Check for empty or invalid XML
+        if (empty(trim($object->response))) {
+            $this->log("Received an EMPTY response from QuickBooks. Halting.");
+             // Decide how to handle this. We'll stop processing to be safe.
+             // You might want to retry, but for now, we'll stop.
+            return new ReceiveResponseXML(100); // 100 = stop
+        }
+        
+        libxml_use_internal_errors(true);
         $response = simplexml_load_string($object->response);
+        if ($response === false) {
+             $errors = libxml_get_errors();
+             $this->log("Failed to parse XML response. Errors: " . print_r($errors, true));
+             libxml_clear_errors();
+             return new ReceiveResponseXML(100); // Stop
+        }
 
         $this->log("Current stage in receiveResponseXML: {$this->stage}");
 
         if ($this->stage === 'query_customer') {
-            // -- MODIFIED --
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
                 $this->log("Customer EXISTS in QuickBooks --> Skipping add, moving to items.");
                 $this->stage = 'query_item'; // Start checking items
@@ -283,14 +292,12 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_customer') {
-            // -- MODIFIED --
             $this->log("CustomerAdd completed. Moving to items.");
             $this->stage = 'query_item'; // Start checking items
             $this->saveState();
             return new ReceiveResponseXML(50);
         }
 
-        // -- NEW STAGE HANDLER --
         if ($this->stage === 'query_item') {
             $itemQueryRs = $response->QBXMLMsgsRs->ItemQueryRs;
             $statusCode = (string)$itemQueryRs->attributes()->statusCode;
@@ -305,7 +312,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             } else {
                 // An actual error occurred
                 $errorMsg = (string)$itemQueryRs->attributes()->statusMessage;
-                $this->log("Error querying item. Halting. Error: $errorMsg");
+                $this_>log("Error querying item. Halting. Error: $errorMsg");
                 $this->saveState(); // Save state but don't progress
                 return new ReceiveResponseXML(100); // Stop processing
             }
@@ -314,9 +321,21 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             return new ReceiveResponseXML(50); // Continue processing
         }
 
-        // -- NEW STAGE HANDLER --
         if ($this->stage === 'add_item') {
-            $itemAddRs = $response->QBXMLMsgsRs->ItemInventoryAddRs; // Assuming ItemInventoryAddRq
+            // Determine which AddRs to check based on what we sent in sendRequestXML
+            $itemAddRs = $response->QBXMLMsgsRs->ItemInventoryAddRs; 
+            if (!isset($itemAddRs)) {
+                 $this->log("Could not find ItemInventoryAddRs in response. Checking for other item types.");
+                 // Add checks for ItemNonInventoryAddRs, etc. if you support them
+                 $itemAddRs = $response->QBXMLMsgsRs->ItemNonInventoryAddRs ?? null;
+            }
+            
+            if (!isset($itemAddRs)) {
+                 $this->log("CRITICAL: No known ItemAddRs found in response. Halting.");
+                 $this->saveState();
+                 return new ReceiveResponseXML(100);
+            }
+
             $statusCode = (string)$itemAddRs->attributes()->statusCode;
 
             if ($statusCode === '0') {
@@ -338,7 +357,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
             $this->currentOrderIndex++;
             $this->stage = 'query_customer';
-            $this->currentItemIndex = 0; // -- NEW -- Reset item index for the next order
+            $this->currentItemIndex = 0; // Reset item index for the next order
 
             if ($this->currentOrderIndex < count($this->orders)) {
                 $this->log("Moving to next static order (index = {$this->currentOrderIndex}).");
