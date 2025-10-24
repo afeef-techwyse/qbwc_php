@@ -222,7 +222,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 $this->saveState();
                 return new SendRequestXML($xml);
             }
-
         // Add missing item
         if ($this->stage === 'add_item') {
                 $itemName = $this->itemsToCheck[$this->itemIndex];
