@@ -149,27 +149,34 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $ts = date('Y-m-d H:i:s');
         $logPath = $this->getDebugLogPath();
         
-        // Log to file if possible
-        if (@error_log("[$ts] AddCustomerInvoiceApp: $msg\n", 3, $logPath) === false) {
-            // Fallback to system error log if file logging fails
-            error_log("[$ts] AddCustomerInvoiceApp: $msg");
-        }
+        // Always log to system error log for Railway visibility
+        error_log("[$ts] AddCustomerInvoiceApp: $msg");
         
-        // Also log to Railway's standard output for debugging
-        if (php_sapi_name() !== 'cli') {
-            echo "<!-- AddCustomerInvoiceApp: [$ts] $msg -->\n";
-        }
+        // Also try to log to file if possible
+        @error_log("[$ts] AddCustomerInvoiceApp: $msg\n", 3, $logPath);
     }
 
     // ---------------------- QBWC Methods ----------------------
+    public function authenticate($object)
+    {
+        $this->log("=== authenticate called ===");
+        $this->log("Username: " . $object->strUserName);
+        $this->log("Password provided: " . (!empty($object->strPassword) ? "YES" : "NO"));
+        
+        return parent::authenticate($object);
+    }
+
     public function sendRequestXML($object)
     {
         $this->loadState();
         
         // Log Railway environment info for debugging
+        $this->log("=== sendRequestXML called ===");
         $this->log("Railway Environment - PHP Version: " . PHP_VERSION . ", SAPI: " . php_sapi_name());
         $this->log("State file path: " . $this->getStateFilePath());
         $this->log("Debug log path: " . $this->getDebugLogPath());
+        $this->log("Current order index: " . $this->currentOrderIndex);
+        $this->log("Current stage: " . $this->stage);
 
         if ($this->currentOrderIndex >= count($this->orders)) {
             $this->log("All static orders processed. Nothing to send.");
@@ -292,7 +299,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     public function receiveResponseXML($object)
     {
         $this->loadState();
-        $this->log("Received XML response:\n" . $object->response);
+        $this->log("=== receiveResponseXML called ===");
+        $this->log("Received XML response length: " . strlen($object->response));
+        $this->log("XML response preview: " . substr($object->response, 0, 200));
 
         $response = simplexml_load_string($object->response);
 
