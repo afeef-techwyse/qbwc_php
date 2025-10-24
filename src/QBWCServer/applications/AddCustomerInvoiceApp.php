@@ -27,8 +27,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 ]
             ],
             'line_items' => [
-                ['title' => 'Product A', 'quantity' => 2],
-                ['title' => 'Product B', 'quantity' => 1]
+                ['title' => 'Product A', 'quantity' => 2, 'rate' => 25.00],
+                ['title' => 'Product B', 'quantity' => 1, 'rate' => 50.00]
             ]
         ],
         [
@@ -49,7 +49,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 ]
             ],
             'line_items' => [
-                ['title' => 'Service X', 'quantity' => 5]
+                ['title' => 'Service X', 'quantity' => 5, 'rate' => 15.00]
             ]
         ]
     ];
@@ -57,6 +57,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $currentOrderIndex = 0;
     private $stage = 'query_customer';
     private $customerName;
+    private $itemsToCheck = [];
+    private $currentItemIndex = 0;
 
     // ---------------------- State Persistence ----------------------
     private function loadState() {
@@ -64,20 +66,39 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         if (file_exists($path)) {
             $state = json_decode(file_get_contents($path), true);
             if (is_array($state)) {
-                $this->currentOrderIndex = $state['index'];
-                $this->stage = $state['stage'];
+                $this->currentOrderIndex = $state['index'] ?? 0;
+                $this->stage = $state['stage'] ?? 'query_customer';
+                $this->itemsToCheck = $state['itemsToCheck'] ?? [];
+                $this->currentItemIndex = $state['currentItemIndex'] ?? 0;
             }
         }
     }
 
     private function saveState() {
-        $state = ['index' => $this->currentOrderIndex, 'stage' => $this->stage];
+        $state = [
+            'index' => $this->currentOrderIndex, 
+            'stage' => $this->stage,
+            'itemsToCheck' => $this->itemsToCheck,
+            'currentItemIndex' => $this->currentItemIndex
+        ];
         file_put_contents('/tmp/qbwc_app_state.json', json_encode($state));
     }
     private function resetState() {
         $this->currentOrderIndex = 0;
         $this->stage = 'query_customer';
+        $this->itemsToCheck = [];
+        $this->currentItemIndex = 0;
         @unlink('/tmp/qbwc_app_state.json');
+    }
+
+    private function getUniqueItemsFromOrder($order) {
+        $uniqueItems = [];
+        foreach ($order['line_items'] as $item) {
+            if (!in_array($item['title'], $uniqueItems)) {
+                $uniqueItems[] = $item['title'];
+            }
+        }
+        return $uniqueItems;
     }
 
     // ---------------------- Logging ----------------------
@@ -151,6 +172,30 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             return new SendRequestXML($xml);
         }
 
+        if ($this->stage === 'check_items') {
+            // Check if items exist in QuickBooks
+            if ($this->currentItemIndex < count($this->itemsToCheck)) {
+                $itemName = $this->itemsToCheck[$this->currentItemIndex];
+                $xml = '<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="' . $qbxmlVersion . '"?>
+<QBXML>
+  <QBXMLMsgsRq onError="stopOnError">
+    <ItemQueryRq requestID="' . $this->generateGUID() . '">
+      <FullName>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</FullName>
+    </ItemQueryRq>
+  </QBXMLMsgsRq>
+</QBXML>';
+                $this->log("Sending ItemQueryRq XML for item: $itemName\n$xml");
+                $this->saveState();
+                return new SendRequestXML($xml);
+            } else {
+                // All items checked, move to invoice creation
+                $this->stage = 'add_invoice';
+                $this->saveState();
+                return $this->sendRequestXML($object);
+            }
+        }
+
         if ($this->stage === 'add_invoice') {
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
@@ -160,12 +205,14 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
       <InvoiceAdd>
         <CustomerRef><FullName>' . htmlentities($this->customerName) . '</FullName></CustomerRef>
         <RefNumber>' . htmlentities($order['id']) . '</RefNumber>
-        <Memo>Static Test Order #' . htmlentities($order['order_number']) . '</Memo>';
+        <Memo>Static Test Order #' . htmlentities($order['order_number']) . '</Memo>
+        <TxnDate>' . date('Y-m-d') . '</TxnDate>';
             foreach ($order['line_items'] as $item) {
                 $xml .= '
         <InvoiceLineAdd>
           <ItemRef><FullName>' . htmlentities($item['title']) . '</FullName></ItemRef>
-          <Quantity>' . (int)$item['quantity'] . '</Quantity>
+          <Quantity>' . (float)$item['quantity'] . '</Quantity>
+          <Rate>' . (float)$item['rate'] . '</Rate>
         </InvoiceLineAdd>';
             }
             $xml .= '
@@ -194,8 +241,12 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         if ($this->stage === 'query_customer') {
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
-                $this->log("Customer EXISTS in QuickBooks --> Skipping add, moving to invoice.");
-                $this->stage = 'add_invoice';
+                $this->log("Customer EXISTS in QuickBooks --> Skipping add, moving to check items.");
+                // Get unique items from current order and start checking them
+                $order = $this->orders[$this->currentOrderIndex];
+                $this->itemsToCheck = $this->getUniqueItemsFromOrder($order);
+                $this->currentItemIndex = 0;
+                $this->stage = 'check_items';
             } else {
                 $this->log("Customer NOT FOUND in QuickBooks --> Will add customer.");
                 $this->stage = 'add_customer';
@@ -205,14 +256,54 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_customer') {
-            $this->log("CustomerAdd completed. Moving to invoice.");
-            $this->stage = 'add_invoice';
+            $this->log("CustomerAdd completed. Moving to check items.");
+            // Get unique items from current order and start checking them
+            $order = $this->orders[$this->currentOrderIndex];
+            $this->itemsToCheck = $this->getUniqueItemsFromOrder($order);
+            $this->currentItemIndex = 0;
+            $this->stage = 'check_items';
             $this->saveState();
             return new ReceiveResponseXML(50);
         }
 
+        if ($this->stage === 'check_items') {
+            $itemName = $this->itemsToCheck[$this->currentItemIndex];
+            
+            // Check if item exists in QuickBooks
+            if (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemRet)) {
+                $this->log("Item '$itemName' EXISTS in QuickBooks.");
+            } else {
+                $this->log("Item '$itemName' NOT FOUND in QuickBooks - Invoice creation may fail.");
+            }
+            
+            $this->currentItemIndex++;
+            if ($this->currentItemIndex < count($this->itemsToCheck)) {
+                $this->saveState();
+                return new ReceiveResponseXML(50);
+            } else {
+                $this->log("All items checked. Moving to invoice creation.");
+                $this->stage = 'add_invoice';
+                $this->saveState();
+                return new ReceiveResponseXML(50);
+            }
+        }
+
         if ($this->stage === 'add_invoice') {
-            $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
+            // Check for errors in the invoice response
+            if (isset($response->QBXMLMsgsRs->InvoiceAddRs->InvoiceRet)) {
+                $invoiceId = (string)$response->QBXMLMsgsRs->InvoiceAddRs->InvoiceRet->TxnID;
+                $this->log("InvoiceAdd SUCCESS for Order #{$this->orders[$this->currentOrderIndex]['order_number']} - Invoice ID: $invoiceId");
+            } else if (isset($response->QBXMLMsgsRs->InvoiceAddRs->statusCode)) {
+                $statusCode = (string)$response->QBXMLMsgsRs->InvoiceAddRs->statusCode;
+                $statusMessage = (string)$response->QBXMLMsgsRs->InvoiceAddRs->statusMessage;
+                $this->log("InvoiceAdd FAILED for Order #{$this->orders[$this->currentOrderIndex]['order_number']} - Status: $statusCode - Message: $statusMessage");
+                
+                // Log the full response for debugging
+                $this->log("Full InvoiceAdd response: " . $object->response);
+            } else {
+                $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']} - No detailed response available.");
+            }
+            
             $this->currentOrderIndex++;
             $this->stage = 'query_customer';
             if ($this->currentOrderIndex < count($this->orders)) {
