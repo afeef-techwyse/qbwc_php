@@ -106,13 +106,20 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     // ---------------------- Logging ----------------------
     private function log($msg) {
         $ts = date('Y-m-d H:i:s');
+        $line = "[$ts] " . self::LOG_TAG . ": $msg";
+        // If env var LOG_TO_STDERR is set (e.g., on Railway), log to stderr so platform logs capture it
+        $toStderr = getenv('LOG_TO_STDERR');
+        if ($toStderr && $toStderr !== '0' && strtolower($toStderr) !== 'false') {
+            error_log($line);
+            return;
+        }
+        // Otherwise log to file in repo
         $path = $this->getLogPath();
-        // Ensure log directory exists
         $dir = dirname($path);
         if (!is_dir($dir)) {
             @mkdir($dir, 0777, true);
         }
-        error_log("[$ts] " . self::LOG_TAG . ": $msg\n", 3, $path);
+        error_log($line . "\n", 3, $path);
     }
 
     // ---------------------- QBWC Methods ----------------------
