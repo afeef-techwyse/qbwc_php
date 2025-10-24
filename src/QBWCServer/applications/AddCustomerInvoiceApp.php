@@ -27,8 +27,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 ]
             ],
             'line_items' => [
-                ['title' => 'Product A', 'quantity' => 2],
-                ['title' => 'Product B', 'quantity' => 1]
+                ['title' => 'ACCSRC', 'quantity' => 2],
+                ['title' => 'NONSTOCK', 'quantity' => 1]
             ]
         ],
         [
