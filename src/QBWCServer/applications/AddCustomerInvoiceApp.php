@@ -9,7 +9,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 {
     private const LOG_TAG = 'AddCustomerInvoiceApp';
     private const STATE_FILENAME = 'qbwc_app_state.json';
-    private const LOG_FILENAME = 'qbwc_app_debug.log';
+    private const LOG_FILENAME = 'app_debug.log';
 
     // Static orders array for testing
     private $orders = [
@@ -107,6 +107,11 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private function log($msg) {
         $ts = date('Y-m-d H:i:s');
         $path = $this->getLogPath();
+        // Ensure log directory exists
+        $dir = dirname($path);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
         error_log("[$ts] " . self::LOG_TAG . ": $msg\n", 3, $path);
     }
 
@@ -394,7 +399,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     private function getLogPath(): string
     {
-        return rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . self::LOG_FILENAME;
+        // Fixed log path inside repository for easier access
+        // c:\Afeef\PTL\GIT\qbwc_php\QBWCServer\log\app_debug.log
+        return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'log' . DIRECTORY_SEPARATOR . self::LOG_FILENAME;
     }
 
     private function safeXmlForLog(string $xml): string
