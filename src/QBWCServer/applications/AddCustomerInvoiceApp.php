@@ -260,10 +260,23 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $this->log("Received XML response:\n" . $object->response);
 
         $response = simplexml_load_string($object->response);
+        
+        // Add debugging for response parsing
+        if ($response === false) {
+            $this->log("ERROR: Failed to parse XML response. Raw response: " . $object->response);
+        } else {
+            $this->log("Successfully parsed XML response. Root element: " . $response->getName());
+        }
 
         $this->log("Current stage in receiveResponseXML: {$this->stage}");
 
         if ($this->stage === 'query_customer') {
+            $this->log("Processing customer query response...");
+            $this->log("Response structure check - QBXMLMsgsRs exists: " . (isset($response->QBXMLMsgsRs) ? 'YES' : 'NO'));
+            if (isset($response->QBXMLMsgsRs)) {
+                $this->log("QBXMLMsgsRs structure: " . print_r($response->QBXMLMsgsRs, true));
+            }
+            
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
                 $this->log("Customer EXISTS in QuickBooks --> Moving to item check.");
                 $this->stage = 'query_items';
