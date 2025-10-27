@@ -9,12 +9,12 @@ class AddInvoicesApp extends AbstractQBWCApplication
 {
     private $requests = [];
     private $currentStep = 0;
+    private $missingItems = [];
 
     public function __construct($config = [])
     {
         parent::__construct($config);
 
-        // Define the invoice and required items
         $this->invoiceData = [
             'customerName' => 'John Doe',
             'refNumber'    => 'INV-1001',
@@ -26,19 +26,15 @@ class AddInvoicesApp extends AbstractQBWCApplication
             ]
         ];
 
-        // Step 1: Check if each item exists
+        // Step 1: Query each item
         foreach ($this->invoiceData['items'] as $item) {
             $this->requests[] = $this->buildItemQueryXML($item['name']);
         }
-
-        // Step 2: Add items (for missing ones)
-        // Step 3: Add invoice (added dynamically in receiveResponseXML)
     }
 
     public function sendRequestXML($object)
     {
         if (!isset($this->requests[$this->currentStep])) {
-            // No more pending requests
             return new SendRequestXML('');
         }
 
@@ -52,42 +48,44 @@ class AddInvoicesApp extends AbstractQBWCApplication
         $response = simplexml_load_string($object->response);
         $this->log_this("Received Response: " . $object->response);
 
-        // Detect which step we're in
+        // Detect response type
         if (isset($response->QBXMLMsgsRs->ItemQueryRs)) {
             $this->handleItemQueryResponse($response);
         } elseif (isset($response->QBXMLMsgsRs->ItemNonInventoryAddRs)) {
             $this->handleItemAddResponse($response);
         } elseif (isset($response->QBXMLMsgsRs->InvoiceAddRs)) {
-            $this->log_this("Invoice Added Successfully!");
+            $this->log_this("✅ Invoice Added Successfully");
         }
 
         $this->currentStep++;
-        if ($this->currentStep < count($this->requests)) {
-            return new ReceiveResponseXML(50); // 50% done
-        }
 
-        return new ReceiveResponseXML(100); // Done
+        // When done with all requests, tell QBWC we’re finished
+        $done = $this->currentStep >= count($this->requests);
+        return new ReceiveResponseXML($done ? 100 : 50);
     }
 
     private function handleItemQueryResponse($response)
     {
         $rs = $response->QBXMLMsgsRs->ItemQueryRs;
         $statusCode = (string) $rs['statusCode'];
-        $itemName = (string) $rs->ItemNonInventoryRet->Name ?? '';
+        $itemRet = $rs->ItemNonInventoryRet ?? null;
+        $itemName = $itemRet ? (string) $itemRet->Name : '';
 
-        if ($statusCode == "0" && $itemName !== '') {
-            // Item exists
-            $this->log_this("Item found: {$itemName}");
+        $currentItem = $this->invoiceData['items'][$this->currentStep]['name'];
+
+        if ($statusCode !== "0" || $itemName === '') {
+            // Item missing
+            $this->log_this("❌ Item not found: {$currentItem}, queueing creation...");
+            $this->missingItems[] = $currentItem;
+            array_splice($this->requests, $this->currentStep + 1, 0, [$this->buildItemAddXML($currentItem)]);
         } else {
-            // Item missing — queue creation
-            $missingItemName = $this->invoiceData['items'][$this->currentStep]['name'];
-            $this->log_this("Item not found: {$missingItemName}, creating NonInventory item...");
-            array_splice($this->requests, $this->currentStep + 1, 0, [$this->buildItemAddXML($missingItemName)]);
+            $this->log_this("✅ Item exists: {$itemName}");
         }
 
-        // After all item checks, queue invoice add (only once)
+        // After last item check, queue invoice if not already added
         if ($this->currentStep + 1 == count($this->invoiceData['items'])) {
             $this->requests[] = $this->buildInvoiceAddXML();
+            $this->log_this("🧾 Queued InvoiceAddRq after item checks.");
         }
     }
 
@@ -95,7 +93,12 @@ class AddInvoicesApp extends AbstractQBWCApplication
     {
         $rs = $response->QBXMLMsgsRs->ItemNonInventoryAddRs;
         $name = (string) $rs->ItemNonInventoryRet->Name;
-        $this->log_this("NonInventory Item Added: {$name}");
+        $statusCode = (string) $rs['statusCode'];
+        if ($statusCode === "0") {
+            $this->log_this("✅ NonInventory Item Added: {$name}");
+        } else {
+            $this->log_this("⚠️ Failed to add NonInventory item: " . $statusCode);
+        }
     }
 
     private function buildItemQueryXML($itemName)
@@ -117,7 +120,7 @@ class AddInvoicesApp extends AbstractQBWCApplication
 <?qbxml version="16.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <ItemNonInventoryAddRq requestID="1">
+    <ItemNonInventoryAddRq requestID="2">
       <ItemNonInventoryAdd>
         <Name>' . htmlspecialchars($itemName) . '</Name>
         <SalesOrPurchase>
