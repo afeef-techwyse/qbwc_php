@@ -116,12 +116,14 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $stage = 'query_customer';
     private $customerName;
     private $currentItemIndex = 0;
+    // runtime paths (can be overridden by env QBWC_RUNTIME_DIR)
+    private $runtimeDir = null;
 
     private function loadState()
     {
-        $path = '/tmp/qbwc_app_state.json';
+        $path = $this->getStatePath();
         if (file_exists($path)) {
-            $state = json_decode(file_get_contents($path), true);
+            $state = json_decode(@file_get_contents($path), true);
             if (is_array($state)) {
                 $this->currentOrderIndex = $state['index'] ?? 0;
                 $this->stage = $state['stage'] ?? 'query_customer';
@@ -137,7 +139,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             'stage' => $this->stage,
             'item_index' => $this->currentItemIndex
         ];
-        file_put_contents('/tmp/qbwc_app_state.json', json_encode($state));
+        $path = $this->getStatePath();
+        @file_put_contents($path, json_encode($state));
     }
 
     private function resetState()
@@ -145,13 +148,51 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $this->currentOrderIndex = 0;
         $this->stage = 'query_customer';
         $this->currentItemIndex = 0;
-        @unlink('/tmp/qbwc_app_state.json');
+        @unlink($this->getStatePath());
     }
 
     private function log($msg)
     {
         $ts = date('Y-m-d H:i:s');
-        error_log("[$ts] AddCustomerInvoiceApp: $msg\n", 3, '/tmp/qbwc_app_debug.log');
+        $logLine = "[$ts] AddCustomerInvoiceApp: $msg\n";
+        $logFile = $this->getLogPath();
+        // Try to append to a file; if it fails, fallback to default error_log (stderr/stdout)
+        $ok = false;
+        if ($logFile) {
+            $dir = dirname($logFile);
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0777, true);
+            }
+            $ok = @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX) !== false;
+        }
+        if (!$ok) {
+            // fallback to PHP error log (usually stderr/captured by Railway)
+            error_log($logLine);
+        }
+    }
+
+    private function getRuntimeDir()
+    {
+        if ($this->runtimeDir !== null) return $this->runtimeDir;
+        $dir = getenv('QBWC_RUNTIME_DIR') ?: sys_get_temp_dir();
+        // If running on Windows with backslashes, normalize
+        $dir = rtrim($dir, "\/ ");
+        // Ensure directory exists
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+        $this->runtimeDir = $dir;
+        return $this->runtimeDir;
+    }
+
+    private function getStatePath()
+    {
+        return $this->getRuntimeDir() . DIRECTORY_SEPARATOR . 'qbwc_app_state.json';
+    }
+
+    private function getLogPath()
+    {
+        return $this->getRuntimeDir() . DIRECTORY_SEPARATOR . 'qbwc_app_debug.log';
     }
 
     public function generateGUID()
