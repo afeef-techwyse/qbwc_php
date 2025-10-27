@@ -69,14 +69,14 @@ class AddInvoicesApp extends AbstractQBWCApplication
                 break;
         }
         
-        // Log the XML being sent for debugging
+        // Log XML being sent for debugging
         $this->log_this("XML being sent to QuickBooks:\n" . $request->sendRequestXMLResult);
         
         return $request;
     }
 
     /**
-     * Handle the response from QuickBooks
+     * Handle response from QuickBooks
      */
     public function receiveResponseXML($object)
     {
@@ -134,9 +134,30 @@ class AddInvoicesApp extends AbstractQBWCApplication
                 return new ReceiveResponseXML(0);
 
             case 'add_invoice':
-                $this->log_this("Invoice add response complete.");
-                $this->resetState(); // Clean up session state
-                return new ReceiveResponseXML(100); // 100 = done
+                $this->log_this("Invoice add response received.");
+                $response = simplexml_load_string($responseXML);
+                if (!$response) {
+                    $this->log_this("ERROR: Failed to parse XML response.");
+                    $this->resetState();
+                    return new ReceiveResponseXML(100); // Stop to avoid infinite loop
+                } else {
+                    // Check if QuickBooks returned an error
+                    $status = $response->QBXMLMsgsRs->InvoiceAddRs->attributes()['statusCode'] ?? '';
+                    $message = $response->QBXMLMsgsRs->InvoiceAddRs->attributes()['statusMessage'] ?? '';
+                    
+                    if ($status == '0' || $status == '1') {
+                        $this->log_this("Invoice successfully created in QuickBooks.");
+                        $this->log_this("Status: {$status}, Message: {$message}");
+                        $this->resetState(); // Clean up session state
+                        return new ReceiveResponseXML(100); // 100 = done
+                    } else {
+                        $this->log_this("ERROR: QuickBooks returned error creating invoice.");
+                        $this->log_this("Status: {$status}, Message: {$message}");
+                        $this->log_this("Raw response: " . $responseXML);
+                        $this->resetState(); // Clean up session state
+                        return new ReceiveResponseXML(100); // 100 = done
+                    }
+                }
 
             default:
                 $this->log_this("Unknown step reached: " . $step);
@@ -144,8 +165,6 @@ class AddInvoicesApp extends AbstractQBWCApplication
                 return new ReceiveResponseXML(100);
         }
     }
-
-
 
     /**
      * Helper: Build ItemQueryRq XML
