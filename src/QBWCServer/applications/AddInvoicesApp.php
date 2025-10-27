@@ -55,15 +55,24 @@ class AddInvoicesApp extends AbstractQBWCApplication
 
         switch ($step) {
             case 'check_items':
-                return $this->buildItemQueryXML($qbxmlVersion);
+                $request = $this->buildItemQueryXML($qbxmlVersion);
+                break;
             case 'add_item':
-                return $this->buildItemAddXML($qbxmlVersion);
+                $request = $this->buildItemAddXML($qbxmlVersion);
+                break;
             case 'add_invoice':
-                return $this->buildInvoiceAddXML($qbxmlVersion);
+                $request = $this->buildInvoiceAddXML($qbxmlVersion);
+                break;
             default:
                 $this->log_this("Unknown step reached.");
-                return new SendRequestXML('');
+                $request = new SendRequestXML('');
+                break;
         }
+        
+        // Log the XML being sent for debugging
+        $this->log_this("XML being sent to QuickBooks:\n" . $request->sendRequestXMLResult);
+        
+        return $request;
     }
 
     /**
