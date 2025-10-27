@@ -11,7 +11,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $orders = [
         [
             'id' => 1001,
-            'order_number' => 'S10023',
+            'order_number' => 'S10011',
             'customer' => [
                 'first_name' => 'John1',
                 'last_name' => 'Doe1',
@@ -33,7 +33,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         ],
         [
             'id' => 1002,
-            'order_number' => 'S10031',
+            'order_number' => 'S10021',
             'customer' => [
                 'first_name' => 'Jane1',
                 'last_name' => 'Smith1',
