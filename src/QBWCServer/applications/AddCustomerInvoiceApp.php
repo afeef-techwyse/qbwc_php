@@ -96,7 +96,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         error_log("[$ts] AddCustomerInvoiceApp: $msg\n", 3, '/tmp/qbwc_app_debug.log');
     }
 
-    private function generateGUID()
+    public function generateGUID()
     {
         return sprintf('%04X%04X-%04X-%04X-%04X-%04X%04X%04X',
             mt_rand(0, 65535), mt_rand(0, 65535),
