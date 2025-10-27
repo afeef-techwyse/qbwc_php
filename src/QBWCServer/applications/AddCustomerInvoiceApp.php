@@ -8,62 +8,123 @@ use QBWCServer\response\SendRequestXML;
 
 class AddCustomerInvoiceApp extends AbstractQBWCApplication
 {
-    private $orders = [
-        [
-            'id' => 1001,
-            'order_number' => 'S10011',
-            'customer' => [
-                'first_name' => 'John1',
-                'last_name' => 'Doe1',
-                'email' => 'john.doe@example.com',
-                'phone' => '123-456-7890',
-                'default_address' => [
-                    'company' => 'John Co.',
-                    'address1' => '123 Test Street',
-                    'city' => 'Testville',
-                    'province' => 'CA',
-                    'zip' => '90001',
-                    'country' => 'United States'
-                ]
-            ],
-            'line_items' => [
-                ['title' => 'ACCSRC', 'quantity' => 2, 'rate' => 100.00],
-                ['title' => 'NONSTOCK', 'quantity' => 1, 'rate' => 50.00]
-            ]
-        ],
-        [
-            'id' => 1002,
-            'order_number' => 'S10021',
-            'customer' => [
-                'first_name' => 'Jane1',
-                'last_name' => 'Smith1',
-                'email' => 'jane.smith@example.com',
-                'phone' => '555-777-8888',
-                'default_address' => [
-                    'company' => '',
-                    'address1' => '456 Sample Ave',
-                    'city' => 'Sampletown',
-                    'province' => 'NY',
-                    'zip' => '10001',
-                    'country' => 'United States'
-                ]
-            ],
-            'line_items' => [
-                ['title' => 'Service X', 'quantity' => 5, 'rate' => 75.00]
-            ]
-        ]
-    ];
+    // orders will be populated from orders_queue (status = 'pending')
+    private $orders = [];
+
+    // DB connection config (matches shopify dynamic.php)
+    private $dsn = "mysql:host=shortline.proxy.rlwy.net;port=53111;dbname=railway";
+    private $dbUser = "root";
+    private $dbPass = "wTVIYIVbAlJdCqIwbHigEVotdGKGdHNA";
+    /** @var \PDO|null */
+    private $pdo = null;
+
+    public function __construct($config = [])
+    {
+        // pass config to parent so login/password and other settings are applied
+        parent::__construct($config);
+        $this->initPDO();
+        $this->printRuntimePathsForDebug();
+    }
+
+    private function initPDO()
+    {
+        if ($this->pdo) return;
+        try {
+            $this->pdo = new \PDO($this->dsn, $this->dbUser, $this->dbPass, [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]);
+        } catch (\Throwable $e) {
+            $this->log("DB connection failed: " . $e->getMessage());
+            $this->pdo = null;
+        }
+    }
+
+    private function loadOrdersFromDb()
+    {
+        if (!$this->pdo) {
+            $this->initPDO();
+            if (!$this->pdo) return;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare("SELECT * FROM orders_queue WHERE status = 'pending' ORDER BY id ASC");
+            $stmt->execute();
+            $rows = $stmt->fetchAll();
+            $this->log("Query returned " . count($rows) . " pending rows from orders_queue");
+            $orders = [];
+            foreach ($rows as $r) {
+                $this->log("Processing queue row id=" . ($r['id'] ?? 'n/a'));
+                $payload = json_decode($r['payload'], true);
+                if (!is_array($payload)) continue;
+
+                $orderNumber = $payload['order_number'] ?? $payload['name'] ?? ($payload['number'] ?? '');
+                $customer = $payload['customer'] ?? [];
+                $defaultAddress = $customer['default_address'] ?? $payload['billing_address'] ?? $payload['shipping_address'] ?? [];
+
+                $lineItems = [];
+                foreach ($payload['line_items'] ?? [] as $li) {
+                    $lineItems[] = [
+                        'title' => $li['title'] ?? ($li['name'] ?? ($li['sku'] ?? 'Item')),
+                        'quantity' => (int)($li['quantity'] ?? 1),
+                        'rate' => (float)($li['price'] ?? ($li['price_set']['shop_money']['amount'] ?? 0.00))
+                    ];
+                }
+
+                $orders[] = [
+                    'queue_id' => (int)$r['id'],
+                    'id' => $payload['id'] ?? null,
+                    'order_number' => (string)$orderNumber,
+                    'customer' => [
+                        'first_name' => $customer['first_name'] ?? ($defaultAddress['first_name'] ?? ''),
+                        'last_name' => $customer['last_name'] ?? ($defaultAddress['last_name'] ?? ''),
+                        'email' => $customer['email'] ?? $payload['email'] ?? '',
+                        'phone' => $customer['phone'] ?? $defaultAddress['phone'] ?? '',
+                        'default_address' => [
+                            'company' => $defaultAddress['company'] ?? '',
+                            'address1' => $defaultAddress['address1'] ?? '',
+                            'city' => $defaultAddress['city'] ?? '',
+                            'province' => $defaultAddress['province'] ?? ($defaultAddress['province_code'] ?? ''),
+                            'zip' => $defaultAddress['zip'] ?? '',
+                            'country' => $defaultAddress['country'] ?? ($defaultAddress['country_name'] ?? '')
+                        ]
+                    ],
+                    'line_items' => $lineItems
+                ];
+            }
+            $this->orders = $orders;
+            $this->log("Loaded " . count($this->orders) . " orders into memory");
+        } catch (\Throwable $e) {
+            $this->log("Failed to load orders from DB: " . $e->getMessage());
+        }
+    }
+
+    private function updateOrderStatusInDb($queueId, $status)
+    {
+        if (!$this->pdo) {
+            $this->initPDO();
+            if (!$this->pdo) return;
+        }
+        try {
+            $stmt = $this->pdo->prepare("UPDATE orders_queue SET status = :status WHERE id = :id");
+            $stmt->execute([':status' => $status, ':id' => $queueId]);
+        } catch (\Throwable $e) {
+            $this->log("Failed to update order status (id={$queueId}): " . $e->getMessage());
+        }
+    }
 
     private $currentOrderIndex = 0;
     private $stage = 'query_customer';
     private $customerName;
     private $currentItemIndex = 0;
+    // runtime paths (can be overridden by env QBWC_RUNTIME_DIR)
+    private $runtimeDir = null;
 
     private function loadState()
     {
-        $path = '/tmp/qbwc_app_state.json';
+        $path = $this->getStatePath();
         if (file_exists($path)) {
-            $state = json_decode(file_get_contents($path), true);
+            $state = json_decode(@file_get_contents($path), true);
             if (is_array($state)) {
                 $this->currentOrderIndex = $state['index'] ?? 0;
                 $this->stage = $state['stage'] ?? 'query_customer';
@@ -79,7 +140,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             'stage' => $this->stage,
             'item_index' => $this->currentItemIndex
         ];
-        file_put_contents('/tmp/qbwc_app_state.json', json_encode($state));
+        $path = $this->getStatePath();
+        @file_put_contents($path, json_encode($state));
     }
 
     private function resetState()
@@ -87,13 +149,56 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $this->currentOrderIndex = 0;
         $this->stage = 'query_customer';
         $this->currentItemIndex = 0;
-        @unlink('/tmp/qbwc_app_state.json');
+        @unlink($this->getStatePath());
     }
 
     private function log($msg)
     {
         $ts = date('Y-m-d H:i:s');
-        error_log("[$ts] AddCustomerInvoiceApp: $msg\n", 3, '/tmp/qbwc_app_debug.log');
+        $logLine = "[$ts] AddCustomerInvoiceApp: $msg\n";
+        // Always log to PHP error_log (stdout/stderr, visible in Railway logs)
+        error_log($logLine);
+        // Also try to append to a file if possible (optional)
+        $logFile = $this->getLogPath();
+        if ($logFile) {
+            $dir = dirname($logFile);
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0777, true);
+            }
+            @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
+        }
+    }
+
+    // Print runtime/log path at construction for visibility
+    public function printRuntimePathsForDebug()
+    {
+        $this->log('QBWC_RUNTIME_DIR=' . $this->getRuntimeDir());
+        $this->log('State file path=' . $this->getStatePath());
+        $this->log('Log file path=' . $this->getLogPath());
+    }
+
+    private function getRuntimeDir()
+    {
+        if ($this->runtimeDir !== null) return $this->runtimeDir;
+        $dir = getenv('QBWC_RUNTIME_DIR') ?: sys_get_temp_dir();
+        // If running on Windows with backslashes, normalize
+        $dir = rtrim($dir, "\/ ");
+        // Ensure directory exists
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+        $this->runtimeDir = $dir;
+        return $this->runtimeDir;
+    }
+
+    private function getStatePath()
+    {
+        return $this->getRuntimeDir() . DIRECTORY_SEPARATOR . 'qbwc_app_state.json';
+    }
+
+    private function getLogPath()
+    {
+        return $this->getRuntimeDir() . DIRECTORY_SEPARATOR . 'qbwc_app_debug.log';
     }
 
     public function generateGUID()
@@ -109,6 +214,11 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     public function sendRequestXML($object)
     {
+        // Ensure orders are loaded from DB (if not already)
+        if (empty($this->orders)) {
+            $this->loadOrdersFromDb();
+        }
+
         $this->loadState();
 
         if ($this->currentOrderIndex >= count($this->orders)) {
@@ -135,6 +245,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending CustomerQueryRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -165,6 +276,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending CustomerAddRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -192,6 +304,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending ItemQueryRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -217,15 +330,37 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         </SalesOrPurchase>
       </ItemNonInventoryAdd>
     </ItemNonInventoryAddRq>
-  </QBXMLMsgsRq>
+  </QBXML>
 </QBXML>';
             $this->log("Sending ItemNonInventoryAddRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
 
         if ($this->stage === 'add_invoice') {
             $this->log("Building InvoiceAdd for Order #{$order['order_number']}");
+
+            // If there are no line items, skip this order and mark it in DB so we don't silently finish without creating an invoice
+            if (empty($order['line_items'])) {
+                $queueId = $order['queue_id'] ?? null;
+                $this->log("Order #{$order['order_number']} has no line_items. Skipping and marking queue_id={$queueId} as 'no_line_items'.");
+                if ($queueId !== null) {
+                    $this->updateOrderStatusInDb($queueId, 'no_line_items');
+                }
+                // advance to next order
+                $this->currentOrderIndex++;
+                $this->stage = 'query_customer';
+                $this->currentItemIndex = 0;
+
+                if ($this->currentOrderIndex < count($this->orders)) {
+                    $this->saveState();
+                    return new SendRequestXML('');
+                }
+
+                $this->resetState();
+                return new SendRequestXML('');
+            }
 
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
@@ -264,6 +399,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending InvoiceAddRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -379,7 +515,13 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             $statusMessage = (string)($invoiceAddRs->attributes()->statusMessage ?? '');
 
             if ($statusCode === '0') {
-                $this->log("Invoice successfully created for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
+                $queueId = $this->orders[$this->currentOrderIndex]['queue_id'] ?? null;
+                $this->log("Invoice successfully created for Order #{$this->orders[$this->currentOrderIndex]['order_number']} (queue_id={$queueId}).");
+                // mark in DB
+                if ($queueId !== null) {
+                    $this->updateOrderStatusInDb($queueId, 'invoice_done');
+                }
+
                 $this->currentOrderIndex++;
                 $this->stage = 'query_customer';
                 $this->currentItemIndex = 0;
@@ -399,6 +541,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 return new ReceiveResponseXML(100);
             }
         }
+
         $this->log("Unexpected stage in receiveResponseXML: {$this->stage}");
         $this->saveState();
         return new ReceiveResponseXML(100);
