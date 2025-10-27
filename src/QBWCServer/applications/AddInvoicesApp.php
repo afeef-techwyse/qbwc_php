@@ -7,124 +7,117 @@ use QBWCServer\response\SendRequestXML;
 
 class AddInvoicesApp extends AbstractQBWCApplication
 {
-    private $requests = [];
-    private $currentStep = 0;
-    private $missingItems = [];
+    // Step tracking
+    private $step = 'check_items';
+    private $itemsToAdd = ['Consulting Services', 'Hosting'];
+    private $currentItemIndex = 0;
 
-    public function __construct($config = [])
-    {
-        parent::__construct($config);
-
-        $this->invoiceData = [
-            'customerName' => 'John Doe',
-            'refNumber'    => 'INV-1001',
-            'txnDate'      => '2025-10-27',
-            'dueDate'      => '2025-11-26',
-            'items' => [
-                ['name' => 'Consulting Services', 'desc' => 'Consulting Fee for October', 'qty' => 1, 'rate' => 500.00],
-                ['name' => 'Hosting', 'desc' => 'Website Hosting (1 Month)', 'qty' => 1, 'rate' => 100.00],
-            ]
-        ];
-
-        // Step 1: Query each item
-        foreach ($this->invoiceData['items'] as $item) {
-            $this->requests[] = $this->buildItemQueryXML($item['name']);
-        }
-    }
-
+    /**
+     * Build and return QBXML to send to QuickBooks
+     */
     public function sendRequestXML($object)
     {
-        if (!isset($this->requests[$this->currentStep])) {
-            return new SendRequestXML('');
-        }
+        $qbxmlVersion = $this->_config['qbxmlVersion'] ?? '16.0';
+        $this->log_this("Current Step: {$this->step}");
 
-        $xml = $this->requests[$this->currentStep];
-        $this->log_this("Sending XML (Step {$this->currentStep}): " . $xml);
-        return new SendRequestXML($xml);
+        switch ($this->step) {
+            case 'check_items':
+                return $this->buildItemQueryXML($qbxmlVersion);
+            case 'add_item':
+                return $this->buildItemAddXML($qbxmlVersion);
+            case 'add_invoice':
+                return $this->buildInvoiceAddXML($qbxmlVersion);
+            default:
+                $this->log_this("Unknown step reached.");
+                return new SendRequestXML('');
+        }
     }
 
+    /**
+     * Handle the response from QuickBooks
+     */
     public function receiveResponseXML($object)
     {
         $response = simplexml_load_string($object->response);
-        $this->log_this("Received Response: " . $object->response);
+        $this->log_this("Received response for step: {$this->step}");
+        $this->log_this($response->asXML());
 
-        // Detect response type
-        if (isset($response->QBXMLMsgsRs->ItemQueryRs)) {
-            $this->handleItemQueryResponse($response);
-        } elseif (isset($response->QBXMLMsgsRs->ItemNonInventoryAddRs)) {
-            $this->handleItemAddResponse($response);
-        } elseif (isset($response->QBXMLMsgsRs->InvoiceAddRs)) {
-            $this->log_this("✅ Invoice Added Successfully");
+        switch ($this->step) {
+            case 'check_items':
+                $itemExists = isset($response->QBXMLMsgsRs->ItemQueryRs->ItemNonInventoryRet);
+                if (!$itemExists) {
+                    $this->step = 'add_item';
+                } else {
+                    $this->advanceItemOrInvoice();
+                }
+                return new ReceiveResponseXML(0);
+
+            case 'add_item':
+                $this->advanceItemOrInvoice();
+                return new ReceiveResponseXML(0);
+
+            case 'add_invoice':
+                $this->log_this("Invoice creation complete.");
+                return new ReceiveResponseXML(100);
+
+            default:
+                return new ReceiveResponseXML(100);
         }
-
-        $this->currentStep++;
-
-        // When done with all requests, tell QBWC we’re finished
-        $done = $this->currentStep >= count($this->requests);
-        return new ReceiveResponseXML($done ? 100 : 50);
     }
 
-    private function handleItemQueryResponse($response)
+    /**
+     * Helper: Advance to next item or move to invoice step
+     */
+    private function advanceItemOrInvoice()
     {
-        $rs = $response->QBXMLMsgsRs->ItemQueryRs;
-        $statusCode = (string) $rs['statusCode'];
-        $itemRet = $rs->ItemNonInventoryRet ?? null;
-        $itemName = $itemRet ? (string) $itemRet->Name : '';
-
-        $currentItem = $this->invoiceData['items'][$this->currentStep]['name'];
-
-        if ($statusCode !== "0" || $itemName === '') {
-            // Item missing
-            $this->log_this("❌ Item not found: {$currentItem}, queueing creation...");
-            $this->missingItems[] = $currentItem;
-            array_splice($this->requests, $this->currentStep + 1, 0, [$this->buildItemAddXML($currentItem)]);
+        $this->currentItemIndex++;
+        if ($this->currentItemIndex < count($this->itemsToAdd)) {
+            $this->step = 'check_items';
         } else {
-            $this->log_this("✅ Item exists: {$itemName}");
-        }
-
-        // After last item check, queue invoice if not already added
-        if ($this->currentStep + 1 == count($this->invoiceData['items'])) {
-            $this->requests[] = $this->buildInvoiceAddXML();
-            $this->log_this("🧾 Queued InvoiceAddRq after item checks.");
+            $this->step = 'add_invoice';
         }
     }
 
-    private function handleItemAddResponse($response)
+    /**
+     * Helper: Build ItemQueryRq XML
+     */
+    private function buildItemQueryXML($qbxmlVersion)
     {
-        $rs = $response->QBXMLMsgsRs->ItemNonInventoryAddRs;
-        $name = (string) $rs->ItemNonInventoryRet->Name;
-        $statusCode = (string) $rs['statusCode'];
-        if ($statusCode === "0") {
-            $this->log_this("✅ NonInventory Item Added: {$name}");
-        } else {
-            $this->log_this("⚠️ Failed to add NonInventory item: " . $statusCode);
-        }
-    }
+        $currentItem = $this->itemsToAdd[$this->currentItemIndex];
+        $this->log_this("Checking if item exists: {$currentItem}");
 
-    private function buildItemQueryXML($itemName)
-    {
-        return '<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="16.0"?>
+        $xml = <<<XML
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="{$qbxmlVersion}"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <ItemQueryRq requestID="1">
-      <FullName>' . htmlspecialchars($itemName) . '</FullName>
+    <ItemQueryRq requestID="{$this->currentItemIndex}">
+      <FullName>{$currentItem}</FullName>
     </ItemQueryRq>
   </QBXMLMsgsRq>
-</QBXML>';
+</QBXML>
+XML;
+        return new SendRequestXML($xml);
     }
 
-    private function buildItemAddXML($itemName)
+    /**
+     * Helper: Build ItemNonInventoryAddRq XML
+     */
+    private function buildItemAddXML($qbxmlVersion)
     {
-        return '<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="16.0"?>
+        $currentItem = $this->itemsToAdd[$this->currentItemIndex];
+        $this->log_this("Adding NonInventory item: {$currentItem}");
+
+        $xml = <<<XML
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="{$qbxmlVersion}"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <ItemNonInventoryAddRq requestID="2">
+    <ItemNonInventoryAddRq requestID="{$this->currentItemIndex}">
       <ItemNonInventoryAdd>
-        <Name>' . htmlspecialchars($itemName) . '</Name>
+        <Name>{$currentItem}</Name>
         <SalesOrPurchase>
-          <Desc>' . htmlspecialchars($itemName) . ' Description</Desc>
+          <Desc>{$currentItem}</Desc>
           <Price>0.00</Price>
           <AccountRef>
             <FullName>Sales</FullName>
@@ -133,37 +126,65 @@ class AddInvoicesApp extends AbstractQBWCApplication
       </ItemNonInventoryAdd>
     </ItemNonInventoryAddRq>
   </QBXMLMsgsRq>
-</QBXML>';
+</QBXML>
+XML;
+        return new SendRequestXML($xml);
     }
 
-    private function buildInvoiceAddXML()
+    /**
+     * Helper: Build InvoiceAddRq XML
+     */
+    private function buildInvoiceAddXML($qbxmlVersion)
     {
-        $data = $this->invoiceData;
-        $lines = '';
-        foreach ($data['items'] as $item) {
-            $lines .= '
-        <InvoiceLineAdd>
-          <ItemRef><FullName>' . htmlspecialchars($item['name']) . '</FullName></ItemRef>
-          <Desc>' . htmlspecialchars($item['desc']) . '</Desc>
-          <Quantity>' . $item['qty'] . '</Quantity>
-          <Rate>' . $item['rate'] . '</Rate>
-        </InvoiceLineAdd>';
-        }
-
-        return '<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="16.0"?>
+        $xml = <<<XML
+<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="{$qbxmlVersion}"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <InvoiceAddRq requestID="100">
+    <InvoiceAddRq requestID="1">
       <InvoiceAdd>
-        <CustomerRef><FullName>' . htmlspecialchars($data['customerName']) . '</FullName></CustomerRef>
-        <TxnDate>' . $data['txnDate'] . '</TxnDate>
-        <RefNumber>' . $data['refNumber'] . '</RefNumber>
-        <DueDate>' . $data['dueDate'] . '</DueDate>
-        ' . $lines . '
+        <CustomerRef>
+          <FullName>John Doe</FullName>
+        </CustomerRef>
+        <TxnDate>2025-10-27</TxnDate>
+        <RefNumber>INV-1001</RefNumber>
+        <BillAddress>
+          <Addr1>John Doe</Addr1>
+          <Addr2>123 Main Street</Addr2>
+          <City>New York</City>
+          <State>NY</State>
+          <PostalCode>10001</PostalCode>
+          <Country>USA</Country>
+        </BillAddress>
+        <TermsRef>
+          <FullName>Net 30</FullName>
+        </TermsRef>
+        <DueDate>2025-11-26</DueDate>
+        <InvoiceLineAdd>
+          <ItemRef>
+            <FullName>Consulting Services</FullName>
+          </ItemRef>
+          <Desc>Consulting Fee for October</Desc>
+          <Quantity>1</Quantity>
+          <Rate>500.00</Rate>
+        </InvoiceLineAdd>
+        <InvoiceLineAdd>
+          <ItemRef>
+            <FullName>Hosting</FullName>
+          </ItemRef>
+          <Desc>Website Hosting (1 Month)</Desc>
+          <Quantity>1</Quantity>
+          <Rate>100.00</Rate>
+        </InvoiceLineAdd>
+        <SalesTaxCodeRef>
+          <FullName>Tax</FullName>
+        </SalesTaxCodeRef>
+        <Other>Generated via QBWC</Other>
       </InvoiceAdd>
     </InvoiceAddRq>
   </QBXMLMsgsRq>
-</QBXML>';
+</QBXML>
+XML;
+        return new SendRequestXML($xml);
     }
 }
