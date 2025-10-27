@@ -8,51 +8,106 @@ use QBWCServer\response\SendRequestXML;
 
 class AddCustomerInvoiceApp extends AbstractQBWCApplication
 {
-    private $orders = [
-        [
-            'id' => 1001,
-            'order_number' => 'S10011',
-            'customer' => [
-                'first_name' => 'John1',
-                'last_name' => 'Doe1',
-                'email' => 'john.doe@example.com',
-                'phone' => '123-456-7890',
-                'default_address' => [
-                    'company' => 'John Co.',
-                    'address1' => '123 Test Street',
-                    'city' => 'Testville',
-                    'province' => 'CA',
-                    'zip' => '90001',
-                    'country' => 'United States'
-                ]
-            ],
-            'line_items' => [
-                ['title' => 'ACCSRC', 'quantity' => 2, 'rate' => 100.00],
-                ['title' => 'NONSTOCK', 'quantity' => 1, 'rate' => 50.00]
-            ]
-        ],
-        [
-            'id' => 1002,
-            'order_number' => 'S10021',
-            'customer' => [
-                'first_name' => 'Jane1',
-                'last_name' => 'Smith1',
-                'email' => 'jane.smith@example.com',
-                'phone' => '555-777-8888',
-                'default_address' => [
-                    'company' => '',
-                    'address1' => '456 Sample Ave',
-                    'city' => 'Sampletown',
-                    'province' => 'NY',
-                    'zip' => '10001',
-                    'country' => 'United States'
-                ]
-            ],
-            'line_items' => [
-                ['title' => 'Service X', 'quantity' => 5, 'rate' => 75.00]
-            ]
-        ]
-    ];
+    // orders will be populated from orders_queue (status = 'pending')
+    private $orders = [];
+
+    // DB connection config (matches shopify dynamic.php)
+    private $dsn = "mysql:host=shortline.proxy.rlwy.net;port=53111;dbname=railway";
+    private $dbUser = "root";
+    private $dbPass = "wTVIYIVbAlJdCqIwbHigEVotdGKGdHNA";
+    /** @var \PDO|null */
+    private $pdo = null;
+
+    public function __construct()
+    {
+        // keep parent's initialization if any
+        parent::__construct();
+        $this->initPDO();
+    }
+
+    private function initPDO()
+    {
+        if ($this->pdo) return;
+        try {
+            $this->pdo = new \PDO($this->dsn, $this->dbUser, $this->dbPass, [
+                \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION,
+                \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC,
+            ]);
+        } catch (\Throwable $e) {
+            $this->log("DB connection failed: " . $e->getMessage());
+            $this->pdo = null;
+        }
+    }
+
+    private function loadOrdersFromDb()
+    {
+        if (!$this->pdo) {
+            $this->initPDO();
+            if (!$this->pdo) return;
+        }
+
+        try {
+            $stmt = $this->pdo->prepare("SELECT * FROM orders_queue WHERE status = 'pending' ORDER BY id ASC");
+            $stmt->execute();
+            $rows = $stmt->fetchAll();
+            $orders = [];
+            foreach ($rows as $r) {
+                $payload = json_decode($r['payload'], true);
+                if (!is_array($payload)) continue;
+
+                $orderNumber = $payload['order_number'] ?? $payload['name'] ?? ($payload['number'] ?? '');
+                $customer = $payload['customer'] ?? [];
+                $defaultAddress = $customer['default_address'] ?? $payload['billing_address'] ?? $payload['shipping_address'] ?? [];
+
+                $lineItems = [];
+                foreach ($payload['line_items'] ?? [] as $li) {
+                    $lineItems[] = [
+                        'title' => $li['title'] ?? ($li['name'] ?? ($li['sku'] ?? 'Item')),
+                        'quantity' => (int)($li['quantity'] ?? 1),
+                        'rate' => (float)($li['price'] ?? ($li['price_set']['shop_money']['amount'] ?? 0.00))
+                    ];
+                }
+
+                $orders[] = [
+                    'queue_id' => (int)$r['id'],
+                    'id' => $payload['id'] ?? null,
+                    'order_number' => (string)$orderNumber,
+                    'customer' => [
+                        'first_name' => $customer['first_name'] ?? ($defaultAddress['first_name'] ?? ''),
+                        'last_name' => $customer['last_name'] ?? ($defaultAddress['last_name'] ?? ''),
+                        'email' => $customer['email'] ?? $payload['email'] ?? '',
+                        'phone' => $customer['phone'] ?? $defaultAddress['phone'] ?? '',
+                        'default_address' => [
+                            'company' => $defaultAddress['company'] ?? '',
+                            'address1' => $defaultAddress['address1'] ?? '',
+                            'city' => $defaultAddress['city'] ?? '',
+                            'province' => $defaultAddress['province'] ?? ($defaultAddress['province_code'] ?? ''),
+                            'zip' => $defaultAddress['zip'] ?? '',
+                            'country' => $defaultAddress['country'] ?? ($defaultAddress['country_name'] ?? '')
+                        ]
+                    ],
+                    'line_items' => $lineItems
+                ];
+            }
+            $this->orders = $orders;
+        } catch (\Throwable $e) {
+            $this->log("Failed to load orders from DB: " . $e->getMessage());
+        }
+    }
+
+    private function updateOrderStatusInDb($queueId, $status)
+    {
+        if (!$this->pdo) {
+            $this->initPDO();
+            if (!$this->pdo) return;
+        }
+        try {
+            $stmt = $this->pdo->prepare("UPDATE orders_queue SET status = :status WHERE id = :id");
+            $stmt->execute([':status' => $status, ':id' => $queueId]);
+        } catch (\Throwable $e) {
+            $this->log("Failed to update order status (id={$queueId}): " . $e->getMessage());
+        }
+    }
 
     private $currentOrderIndex = 0;
     private $stage = 'query_customer';
@@ -109,6 +164,11 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     public function sendRequestXML($object)
     {
+        // Ensure orders are loaded from DB (if not already)
+        if (empty($this->orders)) {
+            $this->loadOrdersFromDb();
+        }
+
         $this->loadState();
 
         if ($this->currentOrderIndex >= count($this->orders)) {
@@ -379,7 +439,13 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             $statusMessage = (string)($invoiceAddRs->attributes()->statusMessage ?? '');
 
             if ($statusCode === '0') {
-                $this->log("Invoice successfully created for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
+                $queueId = $this->orders[$this->currentOrderIndex]['queue_id'] ?? null;
+                $this->log("Invoice successfully created for Order #{$this->orders[$this->currentOrderIndex]['order_number']} (queue_id={$queueId}).");
+                // mark in DB
+                if ($queueId !== null) {
+                    $this->updateOrderStatusInDb($queueId, 'invoice_done');
+                }
+
                 $this->currentOrderIndex++;
                 $this->stage = 'query_customer';
                 $this->currentItemIndex = 0;
