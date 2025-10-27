@@ -23,6 +23,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         // pass config to parent so login/password and other settings are applied
         parent::__construct($config);
         $this->initPDO();
+        $this->printRuntimePathsForDebug();
     }
 
     private function initPDO()
@@ -155,20 +156,25 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     {
         $ts = date('Y-m-d H:i:s');
         $logLine = "[$ts] AddCustomerInvoiceApp: $msg\n";
+        // Always log to PHP error_log (stdout/stderr, visible in Railway logs)
+        error_log($logLine);
+        // Also try to append to a file if possible (optional)
         $logFile = $this->getLogPath();
-        // Try to append to a file; if it fails, fallback to default error_log (stderr/stdout)
-        $ok = false;
         if ($logFile) {
             $dir = dirname($logFile);
             if (!is_dir($dir)) {
                 @mkdir($dir, 0777, true);
             }
-            $ok = @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX) !== false;
+            @file_put_contents($logFile, $logLine, FILE_APPEND | LOCK_EX);
         }
-        if (!$ok) {
-            // fallback to PHP error log (usually stderr/captured by Railway)
-            error_log($logLine);
-        }
+    }
+
+    // Print runtime/log path at construction for visibility
+    public function printRuntimePathsForDebug()
+    {
+        $this->log('QBWC_RUNTIME_DIR=' . $this->getRuntimeDir());
+        $this->log('State file path=' . $this->getStatePath());
+        $this->log('Log file path=' . $this->getLogPath());
     }
 
     private function getRuntimeDir()
@@ -321,7 +327,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         </SalesOrPurchase>
       </ItemNonInventoryAdd>
     </ItemNonInventoryAddRq>
-  </QBXMLMsgsRq>
+  </QBXML>
 </QBXML>';
             $this->log("Sending ItemNonInventoryAddRq XML");
             $this->saveState();
