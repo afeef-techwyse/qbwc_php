@@ -28,10 +28,10 @@ class AddInvoicesApp extends AbstractQBWCApplication
 				<InvoiceAddRq requestID="' . $this->generateGUID() . '">
 					<InvoiceAdd>
 						<CustomerRef>
-							<FullName>Artem</FullName>
+							<FullName>Jane Smith</FullName>
 						</CustomerRef>
 						<RefNumber>Andrey800</RefNumber>
-						<Memo>This invoice was created using Alex\'s package!</Memo>
+						<Memo>This invoice was created using Jane Smith\'s package!</Memo>
 						<InvoiceLineAdd>
 							<ItemRef>
 								<FullName>Product 2</FullName>
