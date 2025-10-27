@@ -399,7 +399,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 return new ReceiveResponseXML(100);
             }
         }
-
         $this->log("Unexpected stage in receiveResponseXML: {$this->stage}");
         $this->saveState();
         return new ReceiveResponseXML(100);
