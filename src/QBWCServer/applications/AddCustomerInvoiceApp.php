@@ -1,5 +1,4 @@
 <?php
-
 namespace QBWCServer\applications;
 
 use QBWCServer\base\AbstractQBWCApplication;
@@ -8,6 +7,7 @@ use QBWCServer\response\SendRequestXML;
 
 class AddCustomerInvoiceApp extends AbstractQBWCApplication
 {
+    // Static orders array for testing
     private $orders = [
         [
             'id' => 1001,
@@ -27,8 +27,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 ]
             ],
             'line_items' => [
-                ['title' => 'ACCSRC', 'quantity' => 2, 'rate' => 100.00],
-                ['title' => 'NONSTOCK', 'quantity' => 1, 'rate' => 50.00]
+                ['title' => 'ACCSRC', 'quantity' => 2],
+                ['title' => 'NONSTOCK', 'quantity' => 1]
             ]
         ],
         [
@@ -49,7 +49,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 ]
             ],
             'line_items' => [
-                ['title' => 'Service X', 'quantity' => 5, 'rate' => 75.00]
+                ['title' => 'Service X', 'quantity' => 5]
             ]
         ]
     ];
@@ -57,69 +57,50 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $currentOrderIndex = 0;
     private $stage = 'query_customer';
     private $customerName;
-    private $currentItemIndex = 0;
 
-    private function loadState()
-    {
+    // ---------------------- State Persistence ----------------------
+    private function loadState() {
         $path = '/tmp/qbwc_app_state.json';
         if (file_exists($path)) {
             $state = json_decode(file_get_contents($path), true);
             if (is_array($state)) {
-                $this->currentOrderIndex = $state['index'] ?? 0;
-                $this->stage = $state['stage'] ?? 'query_customer';
-                $this->currentItemIndex = $state['item_index'] ?? 0;
+                $this->currentOrderIndex = $state['index'];
+                $this->stage = $state['stage'];
             }
         }
     }
 
-    private function saveState()
-    {
-        $state = [
-            'index' => $this->currentOrderIndex,
-            'stage' => $this->stage,
-            'item_index' => $this->currentItemIndex
-        ];
+    private function saveState() {
+        $state = ['index' => $this->currentOrderIndex, 'stage' => $this->stage];
         file_put_contents('/tmp/qbwc_app_state.json', json_encode($state));
     }
-
-    private function resetState()
-    {
+    private function resetState() {
         $this->currentOrderIndex = 0;
         $this->stage = 'query_customer';
-        $this->currentItemIndex = 0;
         @unlink('/tmp/qbwc_app_state.json');
     }
 
-    private function log($msg)
-    {
+    // ---------------------- Logging ----------------------
+    private function log($msg) {
         $ts = date('Y-m-d H:i:s');
-        error_log("[$ts] AddCustomerInvoiceApp: $msg\n", 3, '/tmp/qbwc_app_debug.log');
+        error_log("[$ts] AddShopifyOrdersApp: $msg\n", 3, '/tmp/qbwc_app_debug.log');
     }
 
-    private function generateGUID()
-    {
-        return sprintf('%04X%04X-%04X-%04X-%04X-%04X%04X%04X',
-            mt_rand(0, 65535), mt_rand(0, 65535),
-            mt_rand(0, 65535),
-            mt_rand(16384, 20479),
-            mt_rand(32768, 49151),
-            mt_rand(0, 65535), mt_rand(0, 65535), mt_rand(0, 65535)
-        );
-    }
-
+    // ---------------------- QBWC Methods ----------------------
     public function sendRequestXML($object)
     {
         $this->loadState();
 
         if ($this->currentOrderIndex >= count($this->orders)) {
-            $this->log("All orders processed. Nothing to send.");
-            $this->resetState();
+            $this->log("All static orders processed. Nothing to send.");
+            $this->resetState(); // cleanup state file for next run
             return new SendRequestXML('');
         }
 
         $order = $this->orders[$this->currentOrderIndex];
         $this->customerName = trim($order['customer']['first_name'] . ' ' . $order['customer']['last_name']);
-
+        
+        // Get QBXML version from request parameters
         $qbxmlVersion = $object->qbXMLMajorVers . "." . $object->qbXMLMinorVers;
 
         $this->log("Stage: {$this->stage} -- Order: {$order['order_number']} (Customer: {$this->customerName})");
@@ -134,7 +115,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     </CustomerQueryRq>
   </QBXMLMsgsRq>
 </QBXML>';
-            $this->log("Sending CustomerQueryRq XML");
+            $this->log("Sending CustomerQueryRq XML:\n$xml");
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -157,6 +138,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
           <City>' . htmlspecialchars($addr['city'], ENT_XML1, 'UTF-8') . '</City>
           <State>' . htmlspecialchars($addr['province'], ENT_XML1, 'UTF-8') . '</State>
           <PostalCode>' . htmlspecialchars($addr['zip'], ENT_XML1, 'UTF-8') . '</PostalCode>
+          <Country>' . htmlspecialchars($addr['country'], ENT_XML1, 'UTF-8') . '</Country>
         </BillAddress>
         <Phone>' . htmlspecialchars($cust['phone'], ENT_XML1, 'UTF-8') . '</Phone>
         <Email>' . htmlspecialchars($cust['email'], ENT_XML1, 'UTF-8') . '</Email>
@@ -164,106 +146,34 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     </CustomerAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
-            $this->log("Sending CustomerAddRq XML");
-            $this->saveState();
-            return new SendRequestXML($xml);
-        }
-
-        if ($this->stage === 'query_item') {
-            if ($this->currentItemIndex >= count($order['line_items'])) {
-                $this->log("All items processed for Order #{$order['order_number']}. Moving to add_invoice stage.");
-                $this->stage = 'add_invoice';
-                $this->currentItemIndex = 0;
-                $this->saveState();
-                return $this->sendRequestXML($object);
-            }
-
-            $item = $order['line_items'][$this->currentItemIndex];
-            $itemName = $item['title'];
-            $this->log("Querying item: {$itemName} (Index: {$this->currentItemIndex})");
-
-            $xml = '<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="' . $qbxmlVersion . '"?>
-<QBXML>
-  <QBXMLMsgsRq onError="stopOnError">
-    <ItemQueryRq requestID="' . $this->generateGUID() . '">
-      <FullName>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</FullName>
-    </ItemQueryRq>
-  </QBXMLMsgsRq>
-</QBXML>';
-            $this->log("Sending ItemQueryRq XML");
-            $this->saveState();
-            return new SendRequestXML($xml);
-        }
-
-        if ($this->stage === 'add_item') {
-            $item = $order['line_items'][$this->currentItemIndex];
-            $itemName = $item['title'];
-            $this->log("Adding item: {$itemName} as NonInventory");
-
-            $xml = '<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="' . $qbxmlVersion . '"?>
-<QBXML>
-  <QBXMLMsgsRq onError="stopOnError">
-    <ItemNonInventoryAddRq requestID="' . $this->generateGUID() . '">
-      <ItemNonInventoryAdd>
-        <Name>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</Name>
-        <SalesOrPurchase>
-          <Desc>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</Desc>
-          <Price>0.00</Price>
-          <AccountRef>
-            <FullName>Sales</FullName>
-          </AccountRef>
-        </SalesOrPurchase>
-      </ItemNonInventoryAdd>
-    </ItemNonInventoryAddRq>
-  </QBXMLMsgsRq>
-</QBXML>';
-            $this->log("Sending ItemNonInventoryAddRq XML");
+            $this->log("Sending CustomerAddRq XML:\n$xml");
             $this->saveState();
             return new SendRequestXML($xml);
         }
 
         if ($this->stage === 'add_invoice') {
-            $this->log("Building InvoiceAdd for Order #{$order['order_number']}");
-
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
     <InvoiceAddRq requestID="' . $this->generateGUID() . '">
       <InvoiceAdd>
-        <CustomerRef>
-          <FullName>' . htmlspecialchars($this->customerName, ENT_XML1, 'UTF-8') . '</FullName>
-        </CustomerRef>
-        <TxnDate>' . date('Y-m-d') . '</TxnDate>
-        <RefNumber>' . htmlspecialchars($order['order_number'], ENT_XML1, 'UTF-8') . '</RefNumber>
-        <BillAddress>
-          <Addr1>' . htmlspecialchars($order['customer']['default_address']['address1'], ENT_XML1, 'UTF-8') . '</Addr1>
-          <City>' . htmlspecialchars($order['customer']['default_address']['city'], ENT_XML1, 'UTF-8') . '</City>
-          <State>' . htmlspecialchars($order['customer']['default_address']['province'], ENT_XML1, 'UTF-8') . '</State>
-          <PostalCode>' . htmlspecialchars($order['customer']['default_address']['zip'], ENT_XML1, 'UTF-8') . '</PostalCode>
-        </BillAddress>
-        <Memo>Order #' . htmlspecialchars($order['order_number'], ENT_XML1, 'UTF-8') . '</Memo>';
-
+        <CustomerRef><FullName>' . htmlentities($this->customerName) . '</FullName></CustomerRef>
+        <RefNumber>' . htmlentities($order['id']) . '</RefNumber>
+        <Memo>Static Test Order #' . htmlentities($order['order_number']) . '</Memo>';
             foreach ($order['line_items'] as $item) {
                 $xml .= '
         <InvoiceLineAdd>
-          <ItemRef>
-            <FullName>' . htmlspecialchars($item['title'], ENT_XML1, 'UTF-8') . '</FullName>
-          </ItemRef>
-          <Desc>' . htmlspecialchars($item['title'], ENT_XML1, 'UTF-8') . '</Desc>
+          <ItemRef><FullName>' . htmlentities($item['title']) . '</FullName></ItemRef>
           <Quantity>' . (int)$item['quantity'] . '</Quantity>
-          <Rate>' . number_format($item['rate'], 2, '.', '') . '</Rate>
         </InvoiceLineAdd>';
             }
-
             $xml .= '
       </InvoiceAdd>
     </InvoiceAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
-            $this->log("Sending InvoiceAddRq XML");
+            $this->log("Sending InvoiceAddRq XML:\n$xml");
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -276,33 +186,18 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     public function receiveResponseXML($object)
     {
         $this->loadState();
-        $this->log("Received XML response (truncated for logging)");
+        $this->log("Received XML response:\n" . $object->response);
 
-        if (empty(trim($object->response))) {
-            $this->log("Received an EMPTY response from QuickBooks. Halting.");
-            return new ReceiveResponseXML(100);
-        }
-
-        libxml_use_internal_errors(true);
         $response = simplexml_load_string($object->response);
-        if ($response === false) {
-            $errors = libxml_get_errors();
-            $this->log("Failed to parse XML response. Errors: " . print_r($errors, true));
-            libxml_clear_errors();
-            return new ReceiveResponseXML(100);
-        }
 
         $this->log("Current stage in receiveResponseXML: {$this->stage}");
 
         if ($this->stage === 'query_customer') {
-            $statusCode = (string)($response->QBXMLMsgsRs->CustomerQueryRs->attributes()->statusCode ?? '');
-
-            if ($statusCode === '0' && isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
-                $this->log("Customer EXISTS in QuickBooks. Moving to query_item.");
-                $this->stage = 'query_item';
-                $this->currentItemIndex = 0;
+            if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
+                $this->log("Customer EXISTS in QuickBooks --> Skipping add, moving to invoice.");
+                $this->stage = 'add_invoice';
             } else {
-                $this->log("Customer NOT FOUND in QuickBooks. Moving to add_customer.");
+                $this->log("Customer NOT FOUND in QuickBooks --> Will add customer.");
                 $this->stage = 'add_customer';
             }
             $this->saveState();
@@ -310,94 +205,24 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_customer') {
-            $statusCode = (string)($response->QBXMLMsgsRs->CustomerAddRs->attributes()->statusCode ?? '');
-
-            if ($statusCode === '0') {
-                $this->log("CustomerAdd completed. Moving to query_item.");
-                $this->stage = 'query_item';
-                $this->currentItemIndex = 0;
-                $this->saveState();
-                return new ReceiveResponseXML(50);
-            } else {
-                $errorMsg = (string)($response->QBXMLMsgsRs->CustomerAddRs->attributes()->statusMessage ?? '');
-                $this->log("Error adding customer. Halting. Error: $errorMsg");
-                $this->saveState();
-                return new ReceiveResponseXML(100);
-            }
-        }
-
-        if ($this->stage === 'query_item') {
-            $itemQueryRs = $response->QBXMLMsgsRs->ItemQueryRs;
-            $statusCode = (string)($itemQueryRs->attributes()->statusCode ?? '');
-
-            if ($statusCode === '0') {
-                $itemFound = false;
-                if (isset($itemQueryRs->ItemNonInventoryRet) ||
-                    isset($itemQueryRs->ItemInventoryRet) ||
-                    isset($itemQueryRs->ItemServiceRet)) {
-                    $itemFound = true;
-                }
-
-                if ($itemFound) {
-                    $this->log("Item EXISTS in QuickBooks. Moving to next item.");
-                    $this->currentItemIndex++;
-                    $this->stage = 'query_item';
-                } else {
-                    $this->log("Item query returned success but no item found. Will add.");
-                    $this->stage = 'add_item';
-                }
-            } else {
-                $this->log("Item NOT FOUND in QuickBooks (status: {$statusCode}). Moving to add_item.");
-                $this->stage = 'add_item';
-            }
-
+            $this->log("CustomerAdd completed. Moving to invoice.");
+            $this->stage = 'add_invoice';
             $this->saveState();
             return new ReceiveResponseXML(50);
         }
 
-        if ($this->stage === 'add_item') {
-            $itemAddRs = $response->QBXMLMsgsRs->ItemNonInventoryAddRs;
-            $statusCode = (string)($itemAddRs->attributes()->statusCode ?? '');
-
-            if ($statusCode === '0') {
-                $this->log("ItemAdd completed successfully. Moving to next item.");
-                $this->currentItemIndex++;
-                $this->stage = 'query_item';
+        if ($this->stage === 'add_invoice') {
+            $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
+            $this->currentOrderIndex++;
+            $this->stage = 'query_customer';
+            if ($this->currentOrderIndex < count($this->orders)) {
+                $this->log("Moving to next static order (index = {$this->currentOrderIndex}).");
                 $this->saveState();
                 return new ReceiveResponseXML(50);
-            } else {
-                $errorMsg = (string)($itemAddRs->attributes()->statusMessage ?? '');
-                $this->log("Error adding item. Halting. Error: $errorMsg");
-                $this->saveState();
-                return new ReceiveResponseXML(100);
             }
-        }
-
-        if ($this->stage === 'add_invoice') {
-            $invoiceAddRs = $response->QBXMLMsgsRs->InvoiceAddRs;
-            $statusCode = (string)($invoiceAddRs->attributes()->statusCode ?? '');
-            $statusMessage = (string)($invoiceAddRs->attributes()->statusMessage ?? '');
-
-            if ($statusCode === '0') {
-                $this->log("Invoice successfully created for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
-                $this->currentOrderIndex++;
-                $this->stage = 'query_customer';
-                $this->currentItemIndex = 0;
-
-                if ($this->currentOrderIndex < count($this->orders)) {
-                    $this->log("Moving to next order (index = {$this->currentOrderIndex}).");
-                    $this->saveState();
-                    return new ReceiveResponseXML(50);
-                }
-
-                $this->log("All orders processed. Done!");
-                $this->resetState();
-                return new ReceiveResponseXML(100);
-            } else {
-                $this->log("ERROR creating invoice. Status: {$statusCode}, Message: {$statusMessage}");
-                $this->resetState();
-                return new ReceiveResponseXML(100);
-            }
+            $this->log("All orders processed. Done!");
+            $this->saveState();
+            return new ReceiveResponseXML(100);
         }
 
         $this->log("Unexpected stage in receiveResponseXML: {$this->stage}");
