@@ -245,6 +245,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending CustomerQueryRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -275,6 +276,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending CustomerAddRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -302,6 +304,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending ItemQueryRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -330,6 +333,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXML>
 </QBXML>';
             $this->log("Sending ItemNonInventoryAddRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
@@ -395,6 +399,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending InvoiceAddRq XML");
+            $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
         }
