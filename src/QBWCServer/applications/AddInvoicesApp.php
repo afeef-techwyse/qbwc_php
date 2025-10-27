@@ -55,8 +55,8 @@ class AddInvoicesApp extends AbstractQBWCApplication
 
     public function receiveResponseXML($object)
     {
-//        $response = simplexml_load_string($object->response);
-//        $this->log_this($response);
+       $response = simplexml_load_string($object->response);
+       $this->log_this($response);
 
         return new ReceiveResponseXML(100);
     }
