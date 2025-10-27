@@ -198,55 +198,54 @@ XML;
      */
     private function buildInvoiceAddXML($qbxmlVersion)
     {
-        $xml = <<<XML
-<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="{$qbxmlVersion}"?>
-<QBXML>
-  <QBXMLMsgsRq onError="stopOnError">
-    <InvoiceAddRq requestID="1">
-      <InvoiceAdd>
-        <CustomerRef>
-          <FullName>John Doe</FullName>
-        </CustomerRef>
-        <TxnDate>2025-10-27</TxnDate>
-        <RefNumber>INV-1001</RefNumber>
-        <BillAddress>
-          <Addr1>John Doe</Addr1>
-          <Addr2>123 Main Street</Addr2>
-          <City>New York</City>
-          <State>NY</State>
-          <PostalCode>10001</PostalCode>
-          <Country>USA</Country>
-        </BillAddress>
-        <TermsRef>
-          <FullName>Net 30</FullName>
-        </TermsRef>
-        <DueDate>2025-11-26</DueDate>
-        <InvoiceLineAdd>
-          <ItemRef>
-            <FullName>Consulting Services</FullName>
-          </ItemRef>
-          <Desc>Consulting Fee for October</Desc>
-          <Quantity>1</Quantity>
-          <Rate>500.00</Rate>
-        </InvoiceLineAdd>
-        <InvoiceLineAdd>
-          <ItemRef>
-            <FullName>Hosting</FullName>
-          </ItemRef>
-          <Desc>Website Hosting (1 Month)</Desc>
-          <Quantity>1</Quantity>
-          <Rate>100.00</Rate>
-        </InvoiceLineAdd>
-        <SalesTaxCodeRef>
-          <FullName>Tax</FullName>
-        </SalesTaxCodeRef>
-        <Other>Generated via QBWC</Other>
-      </InvoiceAdd>
-    </InvoiceAddRq>
-  </QBXMLMsgsRq>
-</QBXML>
-XML;
+        $xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
+        $xml .= "<?qbxml version=\"{$qbxmlVersion}\"?>\n";
+        $xml .= "<QBXML>\n";
+        $xml .= "  <QBXMLMsgsRq onError=\"stopOnError\">\n";
+        $xml .= "    <InvoiceAddRq requestID=\"1\">\n";
+        $xml .= "      <InvoiceAdd>\n";
+        $xml .= "        <CustomerRef>\n";
+        $xml .= "          <FullName>John Doe</FullName>\n";
+        $xml .= "        </CustomerRef>\n";
+        $xml .= "        <TxnDate>2025-10-27</TxnDate>\n";
+        $xml .= "        <RefNumber>INV-1001</RefNumber>\n";
+        $xml .= "        <BillAddress>\n";
+        $xml .= "          <Addr1>John Doe</Addr1>\n";
+        $xml .= "          <Addr2>123 Main Street</Addr2>\n";
+        $xml .= "          <City>New York</City>\n";
+        $xml .= "          <State>NY</State>\n";
+        $xml .= "          <PostalCode>10001</PostalCode>\n";
+        $xml .= "          <Country>USA</Country>\n";
+        $xml .= "        </BillAddress>\n";
+        $xml .= "        <TermsRef>\n";
+        $xml .= "          <FullName>Net 30</FullName>\n";
+        $xml .= "        </TermsRef>\n";
+        $xml .= "        <DueDate>2025-11-26</DueDate>\n";
+        $xml .= "        <InvoiceLineAdd>\n";
+        $xml .= "          <ItemRef>\n";
+        $xml .= "            <FullName>Consulting Services</FullName>\n";
+        $xml .= "          </ItemRef>\n";
+        $xml .= "          <Desc>Consulting Fee for October</Desc>\n";
+        $xml .= "          <Quantity>1</Quantity>\n";
+        $xml .= "          <Rate>500.00</Rate>\n";
+        $xml .= "        </InvoiceLineAdd>\n";
+        $xml .= "        <InvoiceLineAdd>\n";
+        $xml .= "          <ItemRef>\n";
+        $xml .= "            <FullName>Hosting</FullName>\n";
+        $xml .= "          </ItemRef>\n";
+        $xml .= "          <Desc>Website Hosting (1 Month)</Desc>\n";
+        $xml .= "          <Quantity>1</Quantity>\n";
+        $xml .= "          <Rate>100.00</Rate>\n";
+        $xml .= "        </InvoiceLineAdd>\n";
+        $xml .= "        <SalesTaxCodeRef>\n";
+        $xml .= "          <FullName>Tax</FullName>\n";
+        $xml .= "        </SalesTaxCodeRef>\n";
+        $xml .= "        <Other>Generated via QBWC</Other>\n";
+        $xml .= "      </InvoiceAdd>\n";
+        $xml .= "    </InvoiceAddRq>\n";
+        $xml .= "  </QBXMLMsgsRq>\n";
+        $xml .= "</QBXML>\n";
+        
         return new SendRequestXML($xml);
     }
 }
