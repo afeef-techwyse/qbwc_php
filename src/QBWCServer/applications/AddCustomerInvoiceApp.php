@@ -114,6 +114,14 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 return new SendRequestXML('');
             }
             
+            // Debug: log payload structure
+            $this->log("Loaded order payload - Keys: " . implode(', ', array_keys($order)));
+            if (isset($order['line_items'])) {
+                $this->log("Line items count: " . count($order['line_items']));
+            } else {
+                $this->log("No line_items key found in order payload");
+            }
+            
             $this->customerName = trim(($order['customer']['first_name'] ?? '') . ' ' . ($order['customer']['last_name'] ?? ''));
             $this->stage = $this->currentOrder['status'] ?? 'pending';
             
@@ -182,6 +190,16 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         if ($this->stage === 'query_item') {
             $lineItems = $order['line_items'] ?? [];
+            $this->log("Query item stage - Total items: " . count($lineItems) . ", Current index: {$this->currentItemIndex}");
+            
+            // If no line items, skip directly to invoice
+            if (empty($lineItems) || count($lineItems) === 0) {
+                $this->log("No line items found. Moving directly to add_invoice stage.");
+                $this->stage = 'add_invoice';
+                $this->updateOrderStatus($this->currentOrder['id'], 'add_invoice');
+                $this->currentItemIndex = 0;
+                return $this->sendRequestXML($object);
+            }
             
             if ($this->currentItemIndex >= count($lineItems)) {
                 $this->log("All items processed. Moving to add_invoice stage.");
