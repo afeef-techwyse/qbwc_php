@@ -22,61 +22,39 @@ class AddInvoicesApp extends AbstractQBWCApplication
         $qbxmlVersion = $this->_config['qbxmlVersion'];
 
         $xml = '<?xml version="1.0" encoding="utf-8"?>
-		<?qbxml version="' . $qbxmlVersion . '"?>
-		<QBXML>
-			<QBXMLMsgsRq onError="stopOnError">
-				<InvoiceAddRq requestID="1">
-				<InvoiceAdd>
-					<!-- Customer -->
-					<CustomerRef>
-					<FullName>John Doe</FullName>
-					</CustomerRef>
-
-					<!-- Invoice Header -->
-					<TxnDate>2025-10-27</TxnDate>
-					<RefNumber>INV-1001</RefNumber>
-					<BillAddress>
-					<Addr1>John Doe</Addr1>
-					<Addr2>123 Main Street</Addr2>
-					<City>Los Angeles</City>
-					<State>CA</State>
-					<PostalCode>90001</PostalCode>
-					<Country>USA</Country>
-					</BillAddress>
-
-					<!-- Terms, Due Date, etc. -->
-					<TermsRef>
-					<FullName>Net 30</FullName>
-					</TermsRef>
-					<DueDate>2025-11-26</DueDate>
-
-					<!-- Line Items -->
-					<InvoiceLineAdd>
-					<ItemRef>
-						<FullName>Consulting Services</FullName>
-					</ItemRef>
-					<Desc>Consulting work for project A</Desc>
-					<Quantity>10</Quantity>
-					<Rate>150.00</Rate>
-					</InvoiceLineAdd>
-
-					<InvoiceLineAdd>
-					<ItemRef>
-						<FullName>Software License</FullName>
-					</ItemRef>
-					<Desc>1-year subscription license</Desc>
-					<Quantity>1</Quantity>
-					<Rate>300.00</Rate>
-					</InvoiceLineAdd>
-
-					<!-- Optional: Sales Tax, Customer Message, etc. -->
-					<CustomerMsgRef>
-					<FullName>Thank you for your business!</FullName>
-					</CustomerMsgRef>
-				</InvoiceAdd>
-				</InvoiceAddRq>
-			</QBXMLMsgsRq>
-		</QBXML>';
+<?qbxml version="16.0"?>
+<QBXML>
+  <QBXMLMsgsRq onError="stopOnError">
+    <InvoiceAddRq requestID="1">
+      <InvoiceAdd>
+        <CustomerRef>
+          <FullName>John Doe</FullName>
+        </CustomerRef>
+        <TxnDate>2025-10-27</TxnDate>
+        <RefNumber>INV-1001</RefNumber>
+        <BillAddress>
+          <Addr1>John Doe</Addr1>
+          <Addr2>123 Main Street</Addr2>
+          <City>Los Angeles</City>
+          <State>CA</State>
+          <PostalCode>90001</PostalCode>
+        </BillAddress>
+        <TermsRef>
+          <FullName>Net 30</FullName>
+        </TermsRef>
+        <InvoiceLineAdd>
+          <ItemRef>
+            <FullName>Consulting Services</FullName>
+          </ItemRef>
+          <Desc>Project consulting</Desc>
+          <Quantity>10</Quantity>
+          <Rate>150.00</Rate>
+        </InvoiceLineAdd>
+      </InvoiceAdd>
+    </InvoiceAddRq>
+  </QBXMLMsgsRq>
+</QBXML>
+';
 
         return new SendRequestXML($xml);
     }
