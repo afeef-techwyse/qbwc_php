@@ -18,10 +18,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     /** @var \PDO|null */
     private $pdo = null;
 
-    public function __construct()
+    public function __construct($config = [])
     {
-        // keep parent's initialization if any
-        parent::__construct();
+        // pass config to parent so login/password and other settings are applied
+        parent::__construct($config);
         $this->initPDO();
     }
 
