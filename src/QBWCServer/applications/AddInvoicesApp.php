@@ -25,27 +25,55 @@ class AddInvoicesApp extends AbstractQBWCApplication
 		<?qbxml version="' . $qbxmlVersion . '"?>
 		<QBXML>
 			<QBXMLMsgsRq onError="stopOnError">
-				<InvoiceAddRq requestID="' . $this->generateGUID() . '">
-					<InvoiceAdd>
-						<CustomerRef>
-							<FullName>Jane Smith</FullName>
-						</CustomerRef>
-						<RefNumber>Andrey800</RefNumber>
-						<Memo>This invoice was created using Jane Smith\'s package!</Memo>
-						<InvoiceLineAdd>
-							<ItemRef>
-								<FullName>Product 2</FullName>
-							</ItemRef>
-							<Quantity>11</Quantity>
-						</InvoiceLineAdd>
-						<InvoiceLineAdd>
-							<ItemRef>
-								<FullName>Product 1</FullName>
-							</ItemRef>
-							<Quantity>7</Quantity>
-						</InvoiceLineAdd>
+				<InvoiceAddRq requestID="1">
+				<InvoiceAdd>
+					<!-- Customer -->
+					<CustomerRef>
+					<FullName>John Doe</FullName>
+					</CustomerRef>
 
-					</InvoiceAdd>
+					<!-- Invoice Header -->
+					<TxnDate>2025-10-27</TxnDate>
+					<RefNumber>INV-1001</RefNumber>
+					<BillAddress>
+					<Addr1>John Doe</Addr1>
+					<Addr2>123 Main Street</Addr2>
+					<City>Los Angeles</City>
+					<State>CA</State>
+					<PostalCode>90001</PostalCode>
+					<Country>USA</Country>
+					</BillAddress>
+
+					<!-- Terms, Due Date, etc. -->
+					<TermsRef>
+					<FullName>Net 30</FullName>
+					</TermsRef>
+					<DueDate>2025-11-26</DueDate>
+
+					<!-- Line Items -->
+					<InvoiceLineAdd>
+					<ItemRef>
+						<FullName>Consulting Services</FullName>
+					</ItemRef>
+					<Desc>Consulting work for project A</Desc>
+					<Quantity>10</Quantity>
+					<Rate>150.00</Rate>
+					</InvoiceLineAdd>
+
+					<InvoiceLineAdd>
+					<ItemRef>
+						<FullName>Software License</FullName>
+					</ItemRef>
+					<Desc>1-year subscription license</Desc>
+					<Quantity>1</Quantity>
+					<Rate>300.00</Rate>
+					</InvoiceLineAdd>
+
+					<!-- Optional: Sales Tax, Customer Message, etc. -->
+					<CustomerMsgRef>
+					<FullName>Thank you for your business!</FullName>
+					</CustomerMsgRef>
+				</InvoiceAdd>
 				</InvoiceAddRq>
 			</QBXMLMsgsRq>
 		</QBXML>';
