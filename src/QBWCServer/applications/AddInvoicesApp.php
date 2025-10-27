@@ -37,33 +37,65 @@ class AddInvoicesApp extends AbstractQBWCApplication
      * Handle the response from QuickBooks
      */
     public function receiveResponseXML($object)
-    {
-        $response = simplexml_load_string($object->response);
-        $this->log_this("Received response for step: {$this->step}");
-        $this->log_this($response->asXML());
+{
+    $responseXML = $object->response;
+    $this->log_this("Response received for step: " . $this->step);
+    $this->log_this("Raw response XML:\n" . $responseXML);
 
-        switch ($this->step) {
-            case 'check_items':
-                $itemExists = isset($response->QBXMLMsgsRs->ItemQueryRs->ItemNonInventoryRet);
-                if (!$itemExists) {
-                    $this->step = 'add_item';
+    $response = simplexml_load_string($responseXML);
+    if (!$response) {
+        $this->log_this("ERROR: Failed to parse XML response.");
+        return new ReceiveResponseXML(100); // Stop to avoid infinite loop
+    }
+
+    switch ($this->step) {
+        case 'check_items':
+            $itemFound = false;
+
+            // Check for multiple item types
+            if (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemNonInventoryRet)) {
+                $itemFound = true;
+            } elseif (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemInventoryRet)) {
+                $itemFound = true;
+            } elseif (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemServiceRet)) {
+                $itemFound = true;
+            }
+
+            if (!$itemFound) {
+                $this->log_this("Item missing: " . $this->itemsToAdd[$this->currentItemIndex] . " — will add it.");
+                $this->step = 'add_item';
+                return new ReceiveResponseXML(0); // ask QBWC to call sendRequestXML again
+            } else {
+                $this->log_this("Item exists: " . $this->itemsToAdd[$this->currentItemIndex]);
+                $this->currentItemIndex++;
+                if ($this->currentItemIndex < count($this->itemsToAdd)) {
+                    $this->step = 'check_items';
                 } else {
-                    $this->advanceItemOrInvoice();
+                    $this->step = 'add_invoice';
                 }
                 return new ReceiveResponseXML(0);
+            }
 
-            case 'add_item':
-                $this->advanceItemOrInvoice();
-                return new ReceiveResponseXML(0);
+        case 'add_item':
+            $this->log_this("Item added: " . $this->itemsToAdd[$this->currentItemIndex]);
+            $this->currentItemIndex++;
+            if ($this->currentItemIndex < count($this->itemsToAdd)) {
+                $this->step = 'check_items';
+            } else {
+                $this->step = 'add_invoice';
+            }
+            return new ReceiveResponseXML(0);
 
-            case 'add_invoice':
-                $this->log_this("Invoice creation complete.");
-                return new ReceiveResponseXML(100);
+        case 'add_invoice':
+            $this->log_this("Invoice add response complete.");
+            return new ReceiveResponseXML(100); // 100 = done
 
-            default:
-                return new ReceiveResponseXML(100);
-        }
+        default:
+            $this->log_this("Unknown step reached: " . $this->step);
+            return new ReceiveResponseXML(100);
     }
+}
+
 
     /**
      * Helper: Advance to next item or move to invoice step
