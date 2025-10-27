@@ -50,8 +50,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             $stmt = $this->pdo->prepare("SELECT * FROM orders_queue WHERE status = 'pending' ORDER BY id ASC");
             $stmt->execute();
             $rows = $stmt->fetchAll();
+            $this->log("Query returned " . count($rows) . " pending rows from orders_queue");
             $orders = [];
             foreach ($rows as $r) {
+                $this->log("Processing queue row id=" . ($r['id'] ?? 'n/a'));
                 $payload = json_decode($r['payload'], true);
                 if (!is_array($payload)) continue;
 
@@ -90,6 +92,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 ];
             }
             $this->orders = $orders;
+            $this->log("Loaded " . count($this->orders) . " orders into memory");
         } catch (\Throwable $e) {
             $this->log("Failed to load orders from DB: " . $e->getMessage());
         }
@@ -286,6 +289,27 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         if ($this->stage === 'add_invoice') {
             $this->log("Building InvoiceAdd for Order #{$order['order_number']}");
+
+            // If there are no line items, skip this order and mark it in DB so we don't silently finish without creating an invoice
+            if (empty($order['line_items'])) {
+                $queueId = $order['queue_id'] ?? null;
+                $this->log("Order #{$order['order_number']} has no line_items. Skipping and marking queue_id={$queueId} as 'no_line_items'.");
+                if ($queueId !== null) {
+                    $this->updateOrderStatusInDb($queueId, 'no_line_items');
+                }
+                // advance to next order
+                $this->currentOrderIndex++;
+                $this->stage = 'query_customer';
+                $this->currentItemIndex = 0;
+
+                if ($this->currentOrderIndex < count($this->orders)) {
+                    $this->saveState();
+                    return new SendRequestXML('');
+                }
+
+                $this->resetState();
+                return new SendRequestXML('');
+            }
 
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
