@@ -9,7 +9,7 @@ class AddInvoicesApp extends AbstractQBWCApplication
 {
     // Step tracking - use session for persistence
     private $itemsToAdd = ['Consulting Services', 'Hosting'];
-    
+
     public function __construct($config = [])
     {
         if (session_status() === PHP_SESSION_NONE) {
@@ -17,27 +17,27 @@ class AddInvoicesApp extends AbstractQBWCApplication
         }
         parent::__construct($config);
     }
-    
+
     public function getStep()
     {
         return $_SESSION['addInvoice_step'] ?? 'check_items';
     }
-    
+
     public function setStep($step)
     {
         $_SESSION['addInvoice_step'] = $step;
     }
-    
+
     public function getCurrentItemIndex()
     {
         return $_SESSION['addInvoice_currentItemIndex'] ?? 0;
     }
-    
+
     public function setCurrentItemIndex($index)
     {
         $_SESSION['addInvoice_currentItemIndex'] = $index;
     }
-    
+
     public function resetState()
     {
         unset($_SESSION['addInvoice_step']);
@@ -68,10 +68,10 @@ class AddInvoicesApp extends AbstractQBWCApplication
                 $request = new SendRequestXML('');
                 break;
         }
-        
+
         // Log XML being sent for debugging
         $this->log_this("XML being sent to QuickBooks:\n" . $request->sendRequestXMLResult);
-        
+
         return $request;
     }
 
@@ -83,13 +83,14 @@ class AddInvoicesApp extends AbstractQBWCApplication
         $responseXML = $object->response;
         $step = $this->getStep();
         $currentIndex = $this->getCurrentItemIndex();
-        
+
         $this->log_this("Response received for step: " . $step);
         $this->log_this("Raw response XML:\n" . $responseXML);
 
         $response = simplexml_load_string($responseXML);
         if (!$response) {
             $this->log_this("ERROR: Failed to parse XML response.");
+            $this->resetState();
             return new ReceiveResponseXML(100); // Stop to avoid infinite loop
         }
 
@@ -135,28 +136,22 @@ class AddInvoicesApp extends AbstractQBWCApplication
 
             case 'add_invoice':
                 $this->log_this("Invoice add response received.");
-                $response = simplexml_load_string($responseXML);
-                if (!$response) {
-                    $this->log_this("ERROR: Failed to parse XML response.");
+
+                // Check if QuickBooks returned an error
+                $status = (string)($response->QBXMLMsgsRs->InvoiceAddRs->attributes()['statusCode'] ?? '');
+                $message = (string)($response->QBXMLMsgsRs->InvoiceAddRs->attributes()['statusMessage'] ?? '');
+
+                if ($status == '0') {
+                    $this->log_this("Invoice successfully created in QuickBooks.");
+                    $this->log_this("Status: {$status}, Message: {$message}");
                     $this->resetState();
-                    return new ReceiveResponseXML(100); // Stop to avoid infinite loop
+                    return new ReceiveResponseXML(100); // 100 = done
                 } else {
-                    // Check if QuickBooks returned an error
-                    $status = $response->QBXMLMsgsRs->InvoiceAddRs->attributes()['statusCode'] ?? '';
-                    $message = $response->QBXMLMsgsRs->InvoiceAddRs->attributes()['statusMessage'] ?? '';
-                    
-                    if ($status == '0' || $status == '1') {
-                        $this->log_this("Invoice successfully created in QuickBooks.");
-                        $this->log_this("Status: {$status}, Message: {$message}");
-                        $this->resetState(); // Clean up session state
-                        return new ReceiveResponseXML(100); // 100 = done
-                    } else {
-                        $this->log_this("ERROR: QuickBooks returned error creating invoice.");
-                        $this->log_this("Status: {$status}, Message: {$message}");
-                        $this->log_this("Raw response: " . $responseXML);
-                        $this->resetState(); // Clean up session state
-                        return new ReceiveResponseXML(100); // 100 = done
-                    }
+                    $this->log_this("ERROR: QuickBooks returned error creating invoice.");
+                    $this->log_this("Status: {$status}, Message: {$message}");
+                    $this->log_this("Raw response: " . $responseXML);
+                    $this->resetState();
+                    return new ReceiveResponseXML(100); // 100 = done
                 }
 
             default:
@@ -226,6 +221,8 @@ XML;
      */
     private function buildInvoiceAddXML($qbxmlVersion)
     {
+        $this->log_this("Building invoice add request for customer: John Doe");
+
         $xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n";
         $xml .= "<?qbxml version=\"{$qbxmlVersion}\"?>\n";
         $xml .= "<QBXML>\n";
@@ -243,12 +240,7 @@ XML;
         $xml .= "          <City>New York</City>\n";
         $xml .= "          <State>NY</State>\n";
         $xml .= "          <PostalCode>10001</PostalCode>\n";
-        $xml .= "          <Country>USA</Country>\n";
         $xml .= "        </BillAddress>\n";
-        $xml .= "        <TermsRef>\n";
-        $xml .= "          <FullName>Net 30</FullName>\n";
-        $xml .= "        </TermsRef>\n";
-        $xml .= "        <DueDate>2025-11-26</DueDate>\n";
         $xml .= "        <InvoiceLineAdd>\n";
         $xml .= "          <ItemRef>\n";
         $xml .= "            <FullName>Consulting Services</FullName>\n";
@@ -265,15 +257,11 @@ XML;
         $xml .= "          <Quantity>1</Quantity>\n";
         $xml .= "          <Rate>100.00</Rate>\n";
         $xml .= "        </InvoiceLineAdd>\n";
-        $xml .= "        <SalesTaxCodeRef>\n";
-        $xml .= "          <FullName>Tax</FullName>\n";
-        $xml .= "        </SalesTaxCodeRef>\n";
-        $xml .= "        <Other>Generated via QBWC</Other>\n";
         $xml .= "      </InvoiceAdd>\n";
         $xml .= "    </InvoiceAddRq>\n";
         $xml .= "  </QBXMLMsgsRq>\n";
-        $xml .= "</QBXML>\n";
-        
+        $xml .= "</QBXML>";
+
         return new SendRequestXML($xml);
     }
 }
