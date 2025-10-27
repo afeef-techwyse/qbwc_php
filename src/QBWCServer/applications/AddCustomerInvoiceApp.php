@@ -330,7 +330,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         </SalesOrPurchase>
       </ItemNonInventoryAdd>
     </ItemNonInventoryAddRq>
-  </QBXML>
+  </QBXMLMsgsRq>
 </QBXML>';
             $this->log("Sending ItemNonInventoryAddRq XML");
             $this->log("XML: " . substr($xml, 0, 2000));
