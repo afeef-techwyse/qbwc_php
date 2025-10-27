@@ -1318,3 +1318,33 @@ object(SimpleXMLElement)#3 (1) {
   }
 }
 
+
+ ==============================================
+[10 / 27 / 2025 06:20:27]
+string(25) "Current Step: check_items"
+
+
+ ==============================================
+[10 / 27 / 2025 06:20:27]
+string(44) "Checking if item exists: Consulting Services"
+
+
+ ==============================================
+[10 / 27 / 2025 06:20:27]
+string(25) "Current Step: add_invoice"
+
+
+ ==============================================
+[10 / 27 / 2025 06:21:09]
+string(25) "Current Step: check_items"
+
+
+ ==============================================
+[10 / 27 / 2025 06:21:09]
+string(44) "Checking if item exists: Consulting Services"
+
+
+ ==============================================
+[10 / 27 / 2025 06:21:09]
+string(25) "Current Step: add_invoice"
+

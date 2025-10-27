@@ -7,10 +7,42 @@ use QBWCServer\response\SendRequestXML;
 
 class AddInvoicesApp extends AbstractQBWCApplication
 {
-    // Step tracking
-    private $step = 'check_items';
+    // Step tracking - use session for persistence
     private $itemsToAdd = ['Consulting Services', 'Hosting'];
-    private $currentItemIndex = 0;
+    
+    public function __construct($config = [])
+    {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        parent::__construct($config);
+    }
+    
+    public function getStep()
+    {
+        return $_SESSION['addInvoice_step'] ?? 'check_items';
+    }
+    
+    public function setStep($step)
+    {
+        $_SESSION['addInvoice_step'] = $step;
+    }
+    
+    public function getCurrentItemIndex()
+    {
+        return $_SESSION['addInvoice_currentItemIndex'] ?? 0;
+    }
+    
+    public function setCurrentItemIndex($index)
+    {
+        $_SESSION['addInvoice_currentItemIndex'] = $index;
+    }
+    
+    public function resetState()
+    {
+        unset($_SESSION['addInvoice_step']);
+        unset($_SESSION['addInvoice_currentItemIndex']);
+    }
 
     /**
      * Build and return QBXML to send to QuickBooks
@@ -18,9 +50,10 @@ class AddInvoicesApp extends AbstractQBWCApplication
     public function sendRequestXML($object)
     {
         $qbxmlVersion = $this->_config['qbxmlVersion'] ?? '16.0';
-        $this->log_this("Current Step: {$this->step}");
+        $step = $this->getStep();
+        $this->log_this("Current Step: {$step}");
 
-        switch ($this->step) {
+        switch ($step) {
             case 'check_items':
                 return $this->buildItemQueryXML($qbxmlVersion);
             case 'add_item':
@@ -37,85 +70,81 @@ class AddInvoicesApp extends AbstractQBWCApplication
      * Handle the response from QuickBooks
      */
     public function receiveResponseXML($object)
-{
-    $responseXML = $object->response;
-    $this->log_this("Response received for step: " . $this->step);
-    $this->log_this("Raw response XML:\n" . $responseXML);
+    {
+        $responseXML = $object->response;
+        $step = $this->getStep();
+        $currentIndex = $this->getCurrentItemIndex();
+        
+        $this->log_this("Response received for step: " . $step);
+        $this->log_this("Raw response XML:\n" . $responseXML);
 
-    $response = simplexml_load_string($responseXML);
-    if (!$response) {
-        $this->log_this("ERROR: Failed to parse XML response.");
-        return new ReceiveResponseXML(100); // Stop to avoid infinite loop
-    }
+        $response = simplexml_load_string($responseXML);
+        if (!$response) {
+            $this->log_this("ERROR: Failed to parse XML response.");
+            return new ReceiveResponseXML(100); // Stop to avoid infinite loop
+        }
 
-    switch ($this->step) {
-        case 'check_items':
-            $itemFound = false;
+        switch ($step) {
+            case 'check_items':
+                $itemFound = false;
 
-            // Check for multiple item types
-            if (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemNonInventoryRet)) {
-                $itemFound = true;
-            } elseif (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemInventoryRet)) {
-                $itemFound = true;
-            } elseif (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemServiceRet)) {
-                $itemFound = true;
-            }
+                // Check for multiple item types
+                if (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemNonInventoryRet)) {
+                    $itemFound = true;
+                } elseif (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemInventoryRet)) {
+                    $itemFound = true;
+                } elseif (isset($response->QBXMLMsgsRs->ItemQueryRs->ItemServiceRet)) {
+                    $itemFound = true;
+                }
 
-            if (!$itemFound) {
-                $this->log_this("Item missing: " . $this->itemsToAdd[$this->currentItemIndex] . " — will add it.");
-                $this->step = 'add_item';
-                return new ReceiveResponseXML(0); // ask QBWC to call sendRequestXML again
-            } else {
-                $this->log_this("Item exists: " . $this->itemsToAdd[$this->currentItemIndex]);
-                $this->currentItemIndex++;
-                if ($this->currentItemIndex < count($this->itemsToAdd)) {
-                    $this->step = 'check_items';
+                if (!$itemFound) {
+                    $this->log_this("Item missing: " . $this->itemsToAdd[$currentIndex] . " — will add it.");
+                    $this->setStep('add_item');
+                    return new ReceiveResponseXML(0); // ask QBWC to call sendRequestXML again
                 } else {
-                    $this->step = 'add_invoice';
+                    $this->log_this("Item exists: " . $this->itemsToAdd[$currentIndex]);
+                    $currentIndex++;
+                    $this->setCurrentItemIndex($currentIndex);
+                    if ($currentIndex < count($this->itemsToAdd)) {
+                        $this->setStep('check_items');
+                    } else {
+                        $this->setStep('add_invoice');
+                    }
+                    return new ReceiveResponseXML(0);
+                }
+
+            case 'add_item':
+                $this->log_this("Item added: " . $this->itemsToAdd[$currentIndex]);
+                $currentIndex++;
+                $this->setCurrentItemIndex($currentIndex);
+                if ($currentIndex < count($this->itemsToAdd)) {
+                    $this->setStep('check_items');
+                } else {
+                    $this->setStep('add_invoice');
                 }
                 return new ReceiveResponseXML(0);
-            }
 
-        case 'add_item':
-            $this->log_this("Item added: " . $this->itemsToAdd[$this->currentItemIndex]);
-            $this->currentItemIndex++;
-            if ($this->currentItemIndex < count($this->itemsToAdd)) {
-                $this->step = 'check_items';
-            } else {
-                $this->step = 'add_invoice';
-            }
-            return new ReceiveResponseXML(0);
+            case 'add_invoice':
+                $this->log_this("Invoice add response complete.");
+                $this->resetState(); // Clean up session state
+                return new ReceiveResponseXML(100); // 100 = done
 
-        case 'add_invoice':
-            $this->log_this("Invoice add response complete.");
-            return new ReceiveResponseXML(100); // 100 = done
-
-        default:
-            $this->log_this("Unknown step reached: " . $this->step);
-            return new ReceiveResponseXML(100);
-    }
-}
-
-
-    /**
-     * Helper: Advance to next item or move to invoice step
-     */
-    private function advanceItemOrInvoice()
-    {
-        $this->currentItemIndex++;
-        if ($this->currentItemIndex < count($this->itemsToAdd)) {
-            $this->step = 'check_items';
-        } else {
-            $this->step = 'add_invoice';
+            default:
+                $this->log_this("Unknown step reached: " . $step);
+                $this->resetState();
+                return new ReceiveResponseXML(100);
         }
     }
+
+
 
     /**
      * Helper: Build ItemQueryRq XML
      */
     private function buildItemQueryXML($qbxmlVersion)
     {
-        $currentItem = $this->itemsToAdd[$this->currentItemIndex];
+        $currentIndex = $this->getCurrentItemIndex();
+        $currentItem = $this->itemsToAdd[$currentIndex];
         $this->log_this("Checking if item exists: {$currentItem}");
 
         $xml = <<<XML
@@ -123,7 +152,7 @@ class AddInvoicesApp extends AbstractQBWCApplication
 <?qbxml version="{$qbxmlVersion}"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <ItemQueryRq requestID="{$this->currentItemIndex}">
+    <ItemQueryRq requestID="{$currentIndex}">
       <FullName>{$currentItem}</FullName>
     </ItemQueryRq>
   </QBXMLMsgsRq>
@@ -137,7 +166,8 @@ XML;
      */
     private function buildItemAddXML($qbxmlVersion)
     {
-        $currentItem = $this->itemsToAdd[$this->currentItemIndex];
+        $currentIndex = $this->getCurrentItemIndex();
+        $currentItem = $this->itemsToAdd[$currentIndex];
         $this->log_this("Adding NonInventory item: {$currentItem}");
 
         $xml = <<<XML
@@ -145,7 +175,7 @@ XML;
 <?qbxml version="{$qbxmlVersion}"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <ItemNonInventoryAddRq requestID="{$this->currentItemIndex}">
+    <ItemNonInventoryAddRq requestID="{$currentIndex}">
       <ItemNonInventoryAdd>
         <Name>{$currentItem}</Name>
         <SalesOrPurchase>
