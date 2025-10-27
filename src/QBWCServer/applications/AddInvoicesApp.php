@@ -7,48 +7,121 @@ use QBWCServer\response\SendRequestXML;
 
 class AddInvoicesApp extends AbstractQBWCApplication
 {
-    // Track step flow
-    private $step = 'check_items';
-    private $itemsToAdd = ['Consulting Services', 'Hosting'];
-    private $currentItemIndex = 0;
+    private $requests = [];
+    private $currentStep = 0;
+
+    public function __construct($config = [])
+    {
+        parent::__construct($config);
+
+        // Define the invoice and required items
+        $this->invoiceData = [
+            'customerName' => 'John Doe',
+            'refNumber'    => 'INV-1001',
+            'txnDate'      => '2025-10-27',
+            'dueDate'      => '2025-11-26',
+            'items' => [
+                ['name' => 'Consulting Services', 'desc' => 'Consulting Fee for October', 'qty' => 1, 'rate' => 500.00],
+                ['name' => 'Hosting', 'desc' => 'Website Hosting (1 Month)', 'qty' => 1, 'rate' => 100.00],
+            ]
+        ];
+
+        // Step 1: Check if each item exists
+        foreach ($this->invoiceData['items'] as $item) {
+            $this->requests[] = $this->buildItemQueryXML($item['name']);
+        }
+
+        // Step 2: Add items (for missing ones)
+        // Step 3: Add invoice (added dynamically in receiveResponseXML)
+    }
 
     public function sendRequestXML($object)
     {
-        $qbxmlVersion = $this->_config['qbxmlVersion'] ?? '16.0';
-        $this->log_this("Step: " . $this->step);
+        if (!isset($this->requests[$this->currentStep])) {
+            // No more pending requests
+            return new SendRequestXML('');
+        }
 
-        // STEP 1: Check if items exist in QuickBooks
-        if ($this->step === 'check_items') {
-            $currentItem = $this->itemsToAdd[$this->currentItemIndex];
-            $this->log_this("Checking item: " . $currentItem);
+        $xml = $this->requests[$this->currentStep];
+        $this->log_this("Sending XML (Step {$this->currentStep}): " . $xml);
+        return new SendRequestXML($xml);
+    }
 
-            $xml = '<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="' . $qbxmlVersion . '"?>
+    public function receiveResponseXML($object)
+    {
+        $response = simplexml_load_string($object->response);
+        $this->log_this("Received Response: " . $object->response);
+
+        // Detect which step we're in
+        if (isset($response->QBXMLMsgsRs->ItemQueryRs)) {
+            $this->handleItemQueryResponse($response);
+        } elseif (isset($response->QBXMLMsgsRs->ItemNonInventoryAddRs)) {
+            $this->handleItemAddResponse($response);
+        } elseif (isset($response->QBXMLMsgsRs->InvoiceAddRs)) {
+            $this->log_this("Invoice Added Successfully!");
+        }
+
+        $this->currentStep++;
+        if ($this->currentStep < count($this->requests)) {
+            return new ReceiveResponseXML(50); // 50% done
+        }
+
+        return new ReceiveResponseXML(100); // Done
+    }
+
+    private function handleItemQueryResponse($response)
+    {
+        $rs = $response->QBXMLMsgsRs->ItemQueryRs;
+        $statusCode = (string) $rs['statusCode'];
+        $itemName = (string) $rs->ItemNonInventoryRet->Name ?? '';
+
+        if ($statusCode == "0" && $itemName !== '') {
+            // Item exists
+            $this->log_this("Item found: {$itemName}");
+        } else {
+            // Item missing — queue creation
+            $missingItemName = $this->invoiceData['items'][$this->currentStep]['name'];
+            $this->log_this("Item not found: {$missingItemName}, creating NonInventory item...");
+            array_splice($this->requests, $this->currentStep + 1, 0, [$this->buildItemAddXML($missingItemName)]);
+        }
+
+        // After all item checks, queue invoice add (only once)
+        if ($this->currentStep + 1 == count($this->invoiceData['items'])) {
+            $this->requests[] = $this->buildInvoiceAddXML();
+        }
+    }
+
+    private function handleItemAddResponse($response)
+    {
+        $rs = $response->QBXMLMsgsRs->ItemNonInventoryAddRs;
+        $name = (string) $rs->ItemNonInventoryRet->Name;
+        $this->log_this("NonInventory Item Added: {$name}");
+    }
+
+    private function buildItemQueryXML($itemName)
+    {
+        return '<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="16.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <ItemQueryRq requestID="' . $this->currentItemIndex . '">
-      <FullName>' . htmlspecialchars($currentItem) . '</FullName>
+    <ItemQueryRq requestID="1">
+      <FullName>' . htmlspecialchars($itemName) . '</FullName>
     </ItemQueryRq>
   </QBXMLMsgsRq>
 </QBXML>';
+    }
 
-            return new SendRequestXML($xml);
-        }
-
-        // STEP 2: Add NonInventory item if missing
-        elseif ($this->step === 'add_item') {
-            $currentItem = $this->itemsToAdd[$this->currentItemIndex];
-            $this->log_this("Adding NonInventory item: " . $currentItem);
-
-            $xml = '<?xml version="1.0" encoding="utf-8"?>
-<?qbxml version="' . $qbxmlVersion . '"?>
+    private function buildItemAddXML($itemName)
+    {
+        return '<?xml version="1.0" encoding="utf-8"?>
+<?qbxml version="16.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <ItemNonInventoryAddRq requestID="' . $this->currentItemIndex . '">
+    <ItemNonInventoryAddRq requestID="1">
       <ItemNonInventoryAdd>
-        <Name>' . htmlspecialchars($currentItem) . '</Name>
+        <Name>' . htmlspecialchars($itemName) . '</Name>
         <SalesOrPurchase>
-          <Desc>' . htmlspecialchars($currentItem) . '</Desc>
+          <Desc>' . htmlspecialchars($itemName) . ' Description</Desc>
           <Price>0.00</Price>
           <AccountRef>
             <FullName>Sales</FullName>
@@ -58,118 +131,36 @@ class AddInvoicesApp extends AbstractQBWCApplication
     </ItemNonInventoryAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
+    }
 
-            return new SendRequestXML($xml);
+    private function buildInvoiceAddXML()
+    {
+        $data = $this->invoiceData;
+        $lines = '';
+        foreach ($data['items'] as $item) {
+            $lines .= '
+        <InvoiceLineAdd>
+          <ItemRef><FullName>' . htmlspecialchars($item['name']) . '</FullName></ItemRef>
+          <Desc>' . htmlspecialchars($item['desc']) . '</Desc>
+          <Quantity>' . $item['qty'] . '</Quantity>
+          <Rate>' . $item['rate'] . '</Rate>
+        </InvoiceLineAdd>';
         }
 
-        // STEP 3: Add Invoice (once all items exist)
-        elseif ($this->step === 'add_invoice') {
-            $xml = '<?xml version="1.0" encoding="utf-8"?>
+        return '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="16.0"?>
 <QBXML>
   <QBXMLMsgsRq onError="stopOnError">
-    <InvoiceAddRq requestID="1">
+    <InvoiceAddRq requestID="100">
       <InvoiceAdd>
-        <CustomerRef>
-          <FullName>John Doe</FullName>
-        </CustomerRef>
-
-        <TxnDate>2025-10-27</TxnDate>
-        <RefNumber>INV-1001</RefNumber>
-
-        <BillAddress>
-          <Addr1>John Doe</Addr1>
-          <Addr2>123 Main Street</Addr2>
-          <City>New York</City>
-          <State>NY</State>
-          <PostalCode>10001</PostalCode>
-          <Country>USA</Country>
-        </BillAddress>
-
-        <TermsRef>
-          <FullName>Net 30</FullName>
-        </TermsRef>
-
-        <DueDate>2025-11-26</DueDate>
-
-        <InvoiceLineAdd>
-          <ItemRef>
-            <FullName>Consulting Services</FullName>
-          </ItemRef>
-          <Desc>Consulting Fee for October</Desc>
-          <Quantity>1</Quantity>
-          <Rate>500.00</Rate>
-        </InvoiceLineAdd>
-
-        <InvoiceLineAdd>
-          <ItemRef>
-            <FullName>Hosting</FullName>
-          </ItemRef>
-          <Desc>Website Hosting (1 Month)</Desc>
-          <Quantity>1</Quantity>
-          <Rate>100.00</Rate>
-        </InvoiceLineAdd>
-
-        <SalesTaxCodeRef>
-          <FullName>Tax</FullName>
-        </SalesTaxCodeRef>
-
-        <Other>Generated via QBWC</Other>
+        <CustomerRef><FullName>' . htmlspecialchars($data['customerName']) . '</FullName></CustomerRef>
+        <TxnDate>' . $data['txnDate'] . '</TxnDate>
+        <RefNumber>' . $data['refNumber'] . '</RefNumber>
+        <DueDate>' . $data['dueDate'] . '</DueDate>
+        ' . $lines . '
       </InvoiceAdd>
     </InvoiceAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
-
-            return new SendRequestXML($xml);
-        }
-
-        // Default fallback (should not happen)
-        $this->log_this("Unknown step reached.");
-        return new SendRequestXML('');
-    }
-
-    public function receiveResponseXML($object)
-    {
-        $response = simplexml_load_string($object->response);
-        $this->log_this("Response received for step: " . $this->step);
-        $this->log_this($response->asXML());
-
-        // Process responses step by step
-        if ($this->step === 'check_items') {
-            $itemFound = isset($response->QBXMLMsgsRs->ItemQueryRs->ItemNonInventoryRet);
-
-            if (!$itemFound) {
-                // Item doesn't exist — create it
-                $this->step = 'add_item';
-                return new ReceiveResponseXML(0); // Ask QBWC to call sendRequestXML again
-            } else {
-                // Move to next item or invoice
-                $this->currentItemIndex++;
-                if ($this->currentItemIndex < count($this->itemsToAdd)) {
-                    $this->step = 'check_items';
-                } else {
-                    $this->step = 'add_invoice';
-                }
-                return new ReceiveResponseXML(0);
-            }
-        }
-
-        elseif ($this->step === 'add_item') {
-            // After item creation, check next or move on
-            $this->currentItemIndex++;
-            if ($this->currentItemIndex < count($this->itemsToAdd)) {
-                $this->step = 'check_items';
-            } else {
-                $this->step = 'add_invoice';
-            }
-            return new ReceiveResponseXML(0);
-        }
-
-        elseif ($this->step === 'add_invoice') {
-            $this->log_this("Invoice add response complete.");
-            return new ReceiveResponseXML(100); // 100 means done
-        }
-
-        return new ReceiveResponseXML(100);
     }
 }
