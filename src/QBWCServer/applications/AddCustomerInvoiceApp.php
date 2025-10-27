@@ -290,29 +290,33 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 return $this->sendRequestXML($object);
             }
 
-            $item = $order['line_items'][$this->currentItemIndex];
-            $itemName = $item['title'];
-            $this->log("Querying item: {$itemName} (Index: {$this->currentItemIndex})");
+                        $item = $order['line_items'][$this->currentItemIndex];
+                        $itemName = $item['title'];
+                        // Truncate item name to 31 chars for QuickBooks
+                        $itemNameQB = mb_substr($itemName, 0, 31);
+                        $this->log("Querying item: {$itemNameQB} (Index: {$this->currentItemIndex})");
 
-            $xml = '<?xml version="1.0" encoding="utf-8"?>
+                        $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
-  <QBXMLMsgsRq onError="stopOnError">
-    <ItemQueryRq requestID="' . $this->generateGUID() . '">
-      <FullName>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</FullName>
-    </ItemQueryRq>
-  </QBXMLMsgsRq>
+    <QBXMLMsgsRq onError="stopOnError">
+        <ItemQueryRq requestID="' . $this->generateGUID() . '">
+            <FullName>' . htmlspecialchars($itemNameQB, ENT_XML1, 'UTF-8') . '</FullName>
+        </ItemQueryRq>
+    </QBXMLMsgsRq>
 </QBXML>';
-            $this->log("Sending ItemQueryRq XML");
-            $this->log("XML: " . substr($xml, 0, 2000));
-            $this->saveState();
-            return new SendRequestXML($xml);
+                        $this->log("Sending ItemQueryRq XML");
+                        $this->log("XML: " . substr($xml, 0, 2000));
+                        $this->saveState();
+                        return new SendRequestXML($xml);
         }
 
         if ($this->stage === 'add_item') {
             $item = $order['line_items'][$this->currentItemIndex];
             $itemName = $item['title'];
-            $this->log("Adding item: {$itemName} as NonInventory");
+            // Truncate item name to 31 chars for QuickBooks
+            $itemNameQB = mb_substr($itemName, 0, 31);
+            $this->log("Adding item: {$itemNameQB} as NonInventory");
 
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
@@ -320,7 +324,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   <QBXMLMsgsRq onError="stopOnError">
     <ItemNonInventoryAddRq requestID="' . $this->generateGUID() . '">
       <ItemNonInventoryAdd>
-        <Name>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</Name>
+        <Name>' . htmlspecialchars($itemNameQB, ENT_XML1, 'UTF-8') . '</Name>
         <SalesOrPurchase>
           <Desc>' . htmlspecialchars($itemName, ENT_XML1, 'UTF-8') . '</Desc>
           <Price>0.00</Price>
@@ -382,10 +386,12 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         <Memo>Order #' . htmlspecialchars($order['order_number'], ENT_XML1, 'UTF-8') . '</Memo>';
 
             foreach ($order['line_items'] as $item) {
+                // Truncate item name to 31 chars for QuickBooks
+                $itemNameQB = mb_substr($item['title'], 0, 31);
                 $xml .= '
         <InvoiceLineAdd>
           <ItemRef>
-            <FullName>' . htmlspecialchars($item['title'], ENT_XML1, 'UTF-8') . '</FullName>
+            <FullName>' . htmlspecialchars($itemNameQB, ENT_XML1, 'UTF-8') . '</FullName>
           </ItemRef>
           <Desc>' . htmlspecialchars($item['title'], ENT_XML1, 'UTF-8') . '</Desc>
           <Quantity>' . (int)$item['quantity'] . '</Quantity>
@@ -393,7 +399,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         </InvoiceLineAdd>';
             }
 
-            $xml .= '
       </InvoiceAdd>
     </InvoiceAddRq>
   </QBXMLMsgsRq>
@@ -402,6 +407,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             $this->log("XML: " . substr($xml, 0, 2000));
             $this->saveState();
             return new SendRequestXML($xml);
+                                // Truncate item name to 31 chars for QuickBooks
+                                $itemNameQB = mb_substr($item['title'], 0, 31);
+                                $xml .= '
         }
 
         $this->log("Unexpected stage in sendRequestXML: {$this->stage}");
