@@ -1,10 +1,16 @@
 <?php
-// Critical: Configure error reporting before any output to ensure XML responses
-error_reporting(E_ALL & ~E_NOTICE & ~E_STRICT & ~E_DEPRECATED);
+error_reporting(E_ALL);
 ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
 try {
-    $loader = require __DIR__.'/../vendor/autoload.php';
+    $vendorPath = __DIR__ . '/../vendor/autoload.php';
+
+    if (!file_exists($vendorPath)) {
+        throw new \Exception('Vendor autoload not found at: ' . $vendorPath);
+    }
+
+    $loader = require $vendorPath;
 
     $obj = new \QBWCServer\applications\AddCustomerInvoiceApp([
         'login' => 'Admin',
@@ -14,10 +20,18 @@ try {
 
     \QBWCServer\launcher\SoapLauncher::start($obj);
 } catch (\Throwable $e) {
-    // Log error but don't display it to client
-    error_log('AddCustomerInvoiceApp Error: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-    // Return a proper SOAP fault instead of displaying the error
+    error_log('QBWC Error: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
+    error_log('Stack trace: ' . $e->getTraceAsString());
     http_response_code(500);
-    header('Content-Type: text/xml');
-    echo '<?xml version="1.0"?><soap:Fault xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><faultcode>Server</faultcode><faultstring>Internal Server Error</faultstring></soap:Fault>';
+    header('Content-Type: text/xml; charset=utf-8');
+    echo '<?xml version="1.0" encoding="utf-8"?>';
+    echo '<SOAP-ENV:Envelope xmlns:SOAP-ENV="http://schemas.xmlsoap.org/soap/envelope/">';
+    echo '<SOAP-ENV:Body>';
+    echo '<SOAP-ENV:Fault>';
+    echo '<faultcode>Server</faultcode>';
+    echo '<faultstring>' . htmlspecialchars($e->getMessage()) . '</faultstring>';
+    echo '</SOAP-ENV:Fault>';
+    echo '</SOAP-ENV:Body>';
+    echo '</SOAP-ENV:Envelope>';
+    exit;
 }
