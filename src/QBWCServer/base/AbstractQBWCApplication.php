@@ -179,13 +179,28 @@ abstract class AbstractQBWCApplication implements QBWCApplicationInterface
 
     public function log_this($data)
     {
-//        $file_name = './log/vardump.log';
         $file_name = __DIR__ . '/../log/main.log';
-        $f = fopen($file_name, "a");
-//        $f = fopen($file_name, "r + ");
+
+        $dir = dirname($file_name);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0777, true);
+        }
+
+        if (!is_writable($dir)) {
+            error_log('Cannot write to log directory: ' . $dir);
+            return;
+        }
+
+        $f = @fopen($file_name, "a");
+        if ($f === false) {
+            error_log('Cannot open log file: ' . $file_name);
+            return;
+        }
+
         fwrite($f, "\n ==============================================\n");
         fwrite($f, "[" . date("m / d / Y H:i:s") . "]\n");
         fwrite($f, $this->var_dump_to_string($data) . "\n");
+        fclose($f);
     }
 
     public function var_dump_to_string($var)
