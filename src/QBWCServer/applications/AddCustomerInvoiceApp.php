@@ -18,7 +18,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $currentItemIndex = 0;
     private $currentOrderItems = [];
     private $currentDbOrderId = null;
-
     // ---------------------- Database Methods ----------------------
     private function getDbConnection() {
         try {
@@ -309,7 +308,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         $this->log("Current stage in receiveResponseXML: {$this->stage}");
 
-        if ($this->stage === 'query_customer') {
+        if ($this->stage === 'query_customer') {  
+            echo "Hello from Railway logs!\n";
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
                 $this->log("Customer EXISTS in QuickBooks --> Skipping add, moving to check items.");
                 $order = $this->orders[$this->currentOrderIndex];
