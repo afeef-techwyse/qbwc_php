@@ -283,7 +283,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     <InvoiceAddRq requestID="' . $this->generateGUID() . '">
       <InvoiceAdd>
         <CustomerRef><FullName>' . htmlentities($this->customerName) . '</FullName></CustomerRef>
-        <RefNumber>' . htmlentities($order['id']) . '</RefNumber>
+        <RefNumber>' . htmlentities($order['order_number']) . '</RefNumber>
         <Memo>Static Test Order #' . htmlentities($order['order_number']) . '</Memo>';
             foreach ($order['line_items'] as $item) {
                 $xml .= '
