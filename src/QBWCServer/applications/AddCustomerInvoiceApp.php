@@ -275,6 +275,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         error_log('invoice stage = '.$this->stage);
         if ($this->stage === 'add_invoice') {
             error_log('invoice stage = '.$this->stage);
+            error_log("customer-name = ".htmlentities($this->customerName));
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -296,7 +297,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     </InvoiceAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
-            $this->log("Sending InvoiceAddRq XML:\n$xml");
+           error_log("Sending InvoiceAddRq XML:\n$xml");
             $this->saveState();
             return new SendRequestXML($xml);
         }
