@@ -129,6 +129,11 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 $this->currentDbOrderId = $state['dbOrderId'] ?? null;
             }
         }
+
+        // Ensure we have orders loaded into memory (process may be new)
+        if (empty($this->orders)) {
+            $this->fetchPendingOrders();
+        }
     }
 
     private function saveState() {
@@ -303,6 +308,12 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     public function receiveResponseXML($object)
     {
         $this->loadState();
+
+        // Ensure orders present for this request cycle
+        if (empty($this->orders)) {
+            $this->fetchPendingOrders();
+        }
+
         $this->log("Received XML response:\n" . $object->response);
 
         $response = simplexml_load_string($object->response);
