@@ -157,7 +157,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     // ---------------------- Logging ----------------------
     private function log($msg) {
-        $ts = date('Y-m-d H:i:s');
+        error_log($msg. ' at ' . date('Y-m-d H:i:s'));
     }
 
     // ---------------------- QBWC Methods ----------------------
@@ -249,7 +249,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         if ($this->stage === 'add_item') {
             $currentItem = $this->currentOrderItems[$this->currentItemIndex];
-            $this->log("Adding NonInventory item: {$currentItem}");
+            error_log("Adding NonInventory item: {$currentItem}");
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -268,7 +268,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     </ItemNonInventoryAddRq>
   </QBXMLMsgsRq>
 </QBXML>';
-            $this->log("Sending ItemNonInventoryAddRq XML:\n$xml");
+            error_log("Sending ItemNonInventoryAddRq XML:\n$xml");
             $this->saveState();
             return new SendRequestXML($xml);
         }
