@@ -18,6 +18,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $currentItemIndex = 0;
     private $currentOrderItems = [];
     private $currentDbOrderId = null;
+    private $requestCounter = 0;
     // ---------------------- Database Methods ----------------------
     private function getDbConnection() {
         try {
@@ -52,8 +53,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                     }
                 }
             }
-            $this->log("Fetched " . count($this->orders) . " pending orders from database");
-            error_log("Fetched " . count($this->orders) . " pending orders from database. orders are ".json_encode($this->orders));
+            
         } catch (\PDOException $e) {
             $this->log("Error fetching orders: " . $e->getMessage());
         }
@@ -127,6 +127,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 $this->currentItemIndex = $state['itemIndex'] ?? 0;
                 $this->currentOrderItems = $state['orderItems'] ?? [];
                 $this->currentDbOrderId = $state['dbOrderId'] ?? null;
+                $this->requestCounter = $state['requestCounter'] ?? 0;
             }
         }
 
@@ -142,7 +143,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             'stage' => $this->stage,
             'itemIndex' => $this->currentItemIndex,
             'orderItems' => $this->currentOrderItems,
-            'dbOrderId' => $this->currentDbOrderId
+            'dbOrderId' => $this->currentDbOrderId,
+            'requestCounter' => $this->requestCounter
         ];
         file_put_contents('/tmp/qbwc_app_state.json', json_encode($state));
     }
@@ -164,7 +166,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     public function sendRequestXML($object)
     {
         $this->loadState();
-
+        $id = ++$this->requestCounter;
+        $this->log("[$id] Sent XML request:\n" . json_encode($object));
+        $this->saveState();
         if (count($this->orders) === 0) {
             $this->fetchPendingOrders();
         }
@@ -309,14 +313,17 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     public function receiveResponseXML($object)
     {
+
         $this->loadState();
 
+        $id = $this->requestCounter;
+        $this->log("[$id] Received XML response:\n" . $object->response);
         // Ensure orders present for this request cycle
         if (empty($this->orders)) {
             $this->fetchPendingOrders();
         }
 
-        $this->log("Received XML response:\n" . $object->response);
+        
 
         $response = simplexml_load_string($object->response);
 
