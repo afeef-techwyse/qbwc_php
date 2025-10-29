@@ -325,6 +325,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_customer') {
+            error_log("This is an error log line");
             $this->log("CustomerAdd completed. Moving to check items.");
             $order = $this->orders[$this->currentOrderIndex];
             $this->currentOrderItems = array_column($order['line_items'], 'title');
