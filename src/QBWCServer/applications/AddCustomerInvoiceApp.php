@@ -253,7 +253,18 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         if ($this->stage === 'add_item') {
             $currentItem = $this->currentOrderItems[$this->currentItemIndex];
-            error_log("Adding NonInventory item: {$currentItem}");
+            // Determine item title and price from current order context
+            $order = $this->orders[$this->currentOrderIndex] ?? null;
+            $line = null;
+            if ($order && isset($order['line_items'])) {
+                foreach ($order['line_items'] as $li) {
+                    if ((string)$li['title'] === (string)$currentItem) { $line = $li; break; }
+                }
+            }
+            $itemTitle = $line['name'] ?? $line['title'] ?? $currentItem;
+            $itemPrice = isset($line['price']) ? (float)$line['price'] : 0.0;
+            $itemPrice = number_format($itemPrice, 2, '.', '');
+            error_log("Adding NonInventory item: {$currentItem} with title '{$itemTitle}' and price {$itemPrice}");
             $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
@@ -262,8 +273,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
       <ItemNonInventoryAdd>
         <Name>' . htmlspecialchars($currentItem, ENT_XML1, 'UTF-8') . '</Name>
         <SalesOrPurchase>
-          <Desc>' . htmlspecialchars($currentItem, ENT_XML1, 'UTF-8') . '</Desc>
-          <Price>0.00</Price>
+          <Desc>' . htmlspecialchars($itemTitle, ENT_XML1, 'UTF-8') . '</Desc>
+          <Price>' . $itemPrice . '</Price>
           <AccountRef>
             <FullName>Sales</FullName>
           </AccountRef>
