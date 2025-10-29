@@ -280,15 +280,14 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
   <QBXMLMsgsRq onError="stopOnError">
     <InvoiceAddRq requestID="' . $this->generateGUID() . '">
       <InvoiceAdd>
-        <CustomerRef><FullName>' . htmlspecialchars($this->customerName, ENT_XML1, 'UTF-8') . '</FullName></CustomerRef>
-        <RefNumber>' . htmlspecialchars($order['id'], ENT_XML1, 'UTF-8') . '</RefNumber>
-        <Memo>Order #' . htmlspecialchars($order['order_number'], ENT_XML1, 'UTF-8') . '</Memo>';
+        <CustomerRef><FullName>' . htmlentities($this->customerName) . '</FullName></CustomerRef>
+        <RefNumber>' . htmlentities($order['id']) . '</RefNumber>
+        <Memo>Static Test Order #' . htmlentities($order['order_number']) . '</Memo>';
             foreach ($order['line_items'] as $item) {
                 $xml .= '
         <InvoiceLineAdd>
-          <ItemRef><FullName>' . htmlspecialchars($item['title'], ENT_XML1, 'UTF-8') . '</FullName></ItemRef>
+          <ItemRef><FullName>' . htmlentities($item['title']) . '</FullName></ItemRef>
           <Quantity>' . (int)$item['quantity'] . '</Quantity>
-          <Amount>' . number_format((float)$item['price'] * (int)$item['quantity'], 2, '.', '') . '</Amount>
         </InvoiceLineAdd>';
             }
             $xml .= '
@@ -393,26 +392,17 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_invoice') {
-            $status = $response->QBXMLMsgsRs->InvoiceAddRs['statusCode'] ?? '';
-            $statusMessage = $response->QBXMLMsgsRs->InvoiceAddRs['statusMessage'] ?? '';
-            
-            if ($status === '0') {
-                $this->log("InvoiceAdd completed successfully for Order #{$this->orders[$this->currentOrderIndex]['order_number']}");
-                
-                if ($this->currentDbOrderId) {
-                    $this->updateOrderStatus($this->currentDbOrderId, 'invoice_done');
-                }
-                
-                $this->currentOrderIndex++;
-                $this->stage = 'query_customer';
-                $this->currentItemIndex = 0;
-                $this->currentOrderItems = [];
-                $this->currentDbOrderId = null;
-            } else {
-                $this->log("InvoiceAdd failed with status {$status}: {$statusMessage}");
-                if ($this->currentDbOrderId) {
-                    $this->updateOrderStatus($this->currentDbOrderId, 'invoice_failed');
-                }
+            $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
+
+            if ($this->currentDbOrderId) {
+                $this->updateOrderStatus($this->currentDbOrderId, 'invoice_done');
+            }
+
+            $this->currentOrderIndex++;
+            $this->stage = 'query_customer';
+            $this->currentItemIndex = 0;
+            $this->currentOrderItems = [];
+            $this->currentDbOrderId = null;
 
             if ($this->currentOrderIndex < count($this->orders)) {
                 $this->log("Moving to next order (index = {$this->currentOrderIndex}).");
