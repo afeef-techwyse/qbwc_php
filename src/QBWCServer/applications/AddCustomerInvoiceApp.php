@@ -325,9 +325,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'add_customer') {
-            error_log("order line ityem = ".json_encode($order['line_items']));
             $this->log("CustomerAdd completed. Moving to check items.");
             $order = $this->orders[$this->currentOrderIndex];
+            error_log("order line ityem = ".json_encode($order));
             $this->currentOrderItems = array_column($order['line_items'], 'title');
             $this->currentItemIndex = 0;
             $this->stage = 'check_item';
