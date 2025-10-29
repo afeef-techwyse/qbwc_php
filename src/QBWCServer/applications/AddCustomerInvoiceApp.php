@@ -73,7 +73,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         foreach ($lineItems as $item) {
             $transformedLineItems[] = [
                 'title' => $item['sku'] ?? $item['name'] ?? 'Unknown Item',
-                'quantity' => $item['quantity'] ?? 1
+                'quantity' => $item['quantity'] ?? 1,
+                'price' => $item['price'] ?? '0.00'
             ];
         }
 
@@ -152,7 +153,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     // ---------------------- Logging ----------------------
     private function log($msg) {
         $ts = date('Y-m-d H:i:s');
-        error_log("[$ts] AddShopifyOrdersApp: $msg\n", 3, '/tmp/qbwc_app_debug.log');
     }
 
     // ---------------------- QBWC Methods ----------------------
@@ -312,7 +312,9 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         error_log("Current stage in receiveResponseXML: {$this->stage}");
         if ($this->stage === 'query_customer') {  
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
-                $this->log("Customer EXISTS in QuickBooks --> Skipping add, moving to check items.");
+                error_log("Customer EXISTS in QuickBooks --> Skipping add, moving to check items.");
+                error_log("orders = ".json_encode($this->orders));
+                error_log("currentOrderIndex = ". $this->currentOrderIndex);
                 $order = $this->orders[$this->currentOrderIndex];
             error_log("order line ityem = ".json_encode($order));
                 $this->currentOrderItems = array_column($order['line_items'], 'title');
