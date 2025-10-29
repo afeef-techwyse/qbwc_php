@@ -307,12 +307,13 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $response = simplexml_load_string($object->response);
 
         $this->log("Current stage in receiveResponseXML: {$this->stage}");
-
+        error_log("currentOrderIndex = ". $this->currentOrderIndex);
+        error_log("Current stage in receiveResponseXML: {$this->stage}");
         if ($this->stage === 'query_customer') {  
-            echo "Hello from Railway logs!\n";
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
                 $this->log("Customer EXISTS in QuickBooks --> Skipping add, moving to check items.");
                 $order = $this->orders[$this->currentOrderIndex];
+            error_log("order line ityem = ".json_encode($order));
                 $this->currentOrderItems = array_column($order['line_items'], 'title');
                 $this->currentItemIndex = 0;
                 $this->stage = 'check_item';
