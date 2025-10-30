@@ -12,7 +12,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     private $dbPass = "wTVIYIVbAlJdCqIwbHigEVotdGKGdHNA";
 
     private $orders = [];
-    private $currentOrderIndex = 0;
     private $stage = 'query_customer';
     private $customerName;
     private $currentItemIndex = 0;
@@ -35,25 +34,30 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $pdo = $this->getDbConnection();
         if (!$pdo) {
             $this->log("Failed to connect to database");
-            return;
+            return false;
         }
 
         try {
             $stmt = $pdo->prepare("SELECT id, shopify_order_id, payload FROM orders_queue WHERE status = 'pending' ORDER BY id ASC LIMIT 1");
             $stmt->execute();
-            $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+            
+            if (!$row) {
+                $this->log("No pending orders found");
+                return false;
+            }
 
-            $this->orders = [];
-            foreach ($rows as $row) {
-                $payload = json_decode($row['payload'], true);
-                if ($payload) {
-                    $order = $this->transformShopifyOrder($payload, $row['id']);
-                    if ($order) {
-                        $this->orders[] = $order;
-                    }
+            $payload = json_decode($row['payload'], true);
+            if ($payload) {
+                $order = $this->transformShopifyOrder($payload, $row['id']);
+                if ($order) {
+                    $this->orders = [$order];
+                    $this->log("Fetched pending order: " . json_encode($order));
+                    return true;
                 }
             }
-            $this->log("Fetched " . count($this->orders) . " pending orders from database. orders: ".json_encode($this->orders));
+            return false;
+
             
         } catch (\PDOException $e) {
             $this->log("Error fetching orders: " . $e->getMessage());
@@ -131,16 +135,17 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         if (file_exists($path)) {
             $state = json_decode(file_get_contents($path), true);
             if (is_array($state)) {
-                $this->currentOrderIndex = $state['index'];
                 $this->stage = $state['stage'];
                 $this->currentItemIndex = $state['itemIndex'] ?? 0;
                 $this->currentOrderItems = $state['orderItems'] ?? [];
                 $this->currentDbOrderId = $state['dbOrderId'] ?? null;
                 $this->requestCounter = $state['requestCounter'] ?? 0;
+                $this->orders = $state['orders'] ?? [];
+                $this->customerName = $state['customerName'] ?? null;
             }
         }
 
-        // Ensure we have orders loaded into memory (process may be new)
+        // Ensure we have an order loaded if none in state
         if (empty($this->orders)) {
             $this->fetchPendingOrders();
         }
@@ -148,21 +153,23 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     private function saveState() {
         $state = [
-            'index' => $this->currentOrderIndex,
             'stage' => $this->stage,
             'itemIndex' => $this->currentItemIndex,
             'orderItems' => $this->currentOrderItems,
             'dbOrderId' => $this->currentDbOrderId,
-            'requestCounter' => $this->requestCounter
+            'requestCounter' => $this->requestCounter,
+            'orders' => $this->orders,
+            'customerName' => $this->customerName
         ];
         file_put_contents('/tmp/qbwc_app_state.json', json_encode($state));
     }
     private function resetState() {
-        $this->currentOrderIndex = 0;
+        $this->orders = [];
         $this->stage = 'query_customer';
         $this->currentItemIndex = 0;
         $this->currentOrderItems = [];
         $this->currentDbOrderId = null;
+        $this->customerName = null;
         @unlink('/tmp/qbwc_app_state.json');
     }
 
@@ -178,17 +185,16 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $id = ++$this->requestCounter;
         $this->log("[$id] Sent XML request:\n" . json_encode($object));
         $this->saveState();
-        if (count($this->orders) === 0) {
-            $this->fetchPendingOrders();
+
+        if (empty($this->orders)) {
+            if (!$this->fetchPendingOrders()) {
+                $this->log("No pending orders to process.");
+                $this->resetState();
+                return new SendRequestXML('');
+            }
         }
 
-        if ($this->currentOrderIndex >= count($this->orders)) {
-            $this->log("All orders processed. Nothing to send.");
-            $this->resetState();
-            return new SendRequestXML('');
-        }
-
-        $order = $this->orders[$this->currentOrderIndex];
+        $order = $this->orders[0];
         $this->currentDbOrderId = $order['db_id'];
         $this->customerName = trim($order['customer']['first_name'] . ' ' . $order['customer']['last_name']);
         
@@ -427,18 +433,21 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 $this->updateOrderStatus($this->currentDbOrderId, 'invoice_done');
             }
 
-            $this->currentOrderIndex++;
+            // Reset state for next order
+            $this->orders = [];
             $this->stage = 'query_customer';
             $this->currentItemIndex = 0;
             $this->currentOrderItems = [];
             $this->currentDbOrderId = null;
 
-            if ($this->currentOrderIndex < count($this->orders)) {
-                $this->log("Moving to next order (index = {$this->currentOrderIndex}).");
+            // Check if there are more orders to process
+            if ($this->fetchPendingOrders()) {
+                $this->log("Moving to next pending order.");
                 $this->saveState();
                 return new ReceiveResponseXML(50);
             }
-            $this->log("All orders processed. Done!");
+            
+            $this->log("No more pending orders. Done!");
             $this->resetState();
             return new ReceiveResponseXML(100);
         }
