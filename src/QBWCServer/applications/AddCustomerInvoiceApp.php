@@ -64,9 +64,17 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $billingAddress = $shopifyData['billing_address'] ?? $shopifyData['shipping_address'] ?? null;
         $lineItems = $shopifyData['line_items'] ?? [];
 
-        if (!$customer || !$billingAddress) {
+        if (!$customer && !$billingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
             return null;
+        }
+        if(!$customer){
+            $customer = [
+                'first_name' => $billingAddress['first_name'] ?? 'Valued',
+                'last_name' => $billingAddress['last_name'] ?? 'Customer',
+                'email' => $billingAddress['email'] ?? '',
+                'phone' => $billingAddress['phone'] ?? ''
+            ];
         }
 
         $transformedLineItems = [];
