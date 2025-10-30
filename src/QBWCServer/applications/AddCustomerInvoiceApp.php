@@ -53,6 +53,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                     }
                 }
             }
+            $this->log("Fetched " . count($this->orders) . " pending orders from database. orders: ".json_encode($this->orders));
+            exit;
             
         } catch (\PDOException $e) {
             $this->log("Error fetching orders: " . $e->getMessage());
