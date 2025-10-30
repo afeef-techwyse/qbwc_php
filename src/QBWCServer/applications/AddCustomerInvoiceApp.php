@@ -71,7 +71,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         if (!$customer && !$billingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
-            return null;
+            $this->fetchPendingOrders();
         }
         if(!$customer){
             $customer = [
