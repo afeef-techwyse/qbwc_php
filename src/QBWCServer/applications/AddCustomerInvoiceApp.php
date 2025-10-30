@@ -250,6 +250,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         }
 
         if ($this->stage === 'check_item') {
+            error_log("Current items array: " . json_encode($this->currentOrderItems));
+            error_log("Current item index: " . $this->currentItemIndex);
             $currentItem = $this->currentOrderItems[$this->currentItemIndex];
             $this->log("Checking if item exists: {$currentItem}");
             $xml = '<?xml version="1.0" encoding="utf-8"?>
@@ -269,7 +271,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         if ($this->stage === 'add_item') {
             $currentItem = $this->currentOrderItems[$this->currentItemIndex];
             // Determine item title and price from current order context
-            $order = $this->orders[$this->currentOrderIndex] ?? null;
+            $order = $this->orders[0] ?? null;
             $line = null;
             if ($order && isset($order['line_items'])) {
                 foreach ($order['line_items'] as $li) {
@@ -360,9 +362,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             if (isset($response->QBXMLMsgsRs->CustomerQueryRs->CustomerRet)) {
                 error_log("Customer EXISTS in QuickBooks --> Skipping add, moving to check items.");
                 error_log("orders = ".json_encode($this->orders));
-                error_log("currentOrderIndex = ". $this->currentOrderIndex);
-                $order = $this->orders[$this->currentOrderIndex];
-            error_log("order line ityem = ".json_encode($order));
+                $order = $this->orders[0];
+                error_log("order line items = ".json_encode($order));
                 $this->currentOrderItems = array_column($order['line_items'], 'title');
                 $this->currentItemIndex = 0;
                 $this->stage = 'check_item';
@@ -376,8 +377,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
         if ($this->stage === 'add_customer') {
             $this->log("CustomerAdd completed. Moving to check items.");
-            $order = $this->orders[$this->currentOrderIndex];
-            error_log("order line ityem = ".json_encode($order));
+            $order = $this->orders[0];
+            error_log("order line items = ".json_encode($order));
             $this->currentOrderItems = array_column($order['line_items'], 'title');
             $this->currentItemIndex = 0;
             $this->stage = 'check_item';
