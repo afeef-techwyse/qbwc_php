@@ -5,7 +5,6 @@
  */
 
 echo "=== QBWC Debug Script ===\n";
-
 // Check state file
 $stateFile = 'C:\tmp\qbwc_app_state.json';
 if (file_exists($stateFile)) {
