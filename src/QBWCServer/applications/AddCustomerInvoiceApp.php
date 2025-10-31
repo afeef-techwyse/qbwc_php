@@ -65,15 +65,16 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     }
 
     private function transformShopifyOrder($shopifyData, $dbId) {
+        // New payload structure uses top-level keys: order_id, order_number, items, shipping_address, customer
         $customer = $shopifyData['customer'] ?? null;
-        $billingAddress = $shopifyData['billing_address'] ?? $shopifyData['shipping_address'] ?? null;
-        $lineItems = $shopifyData['line_items'] ?? [];
+        $billingAddress = $shopifyData['shipping_address'] ?? $shopifyData['billing_address'] ?? null;
+        $lineItems = $shopifyData['items'] ?? $shopifyData['line_items'] ?? [];
 
         if (!$customer && !$billingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
             $this->fetchPendingOrders();
         }
-        if(!$customer){
+        if (!$customer) {
             $customer = [
                 'first_name' => $billingAddress['first_name'] ?? 'Valued',
                 'last_name' => $billingAddress['last_name'] ?? 'Customer',
@@ -85,16 +86,20 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $transformedLineItems = [];
         foreach ($lineItems as $item) {
             $transformedLineItems[] = [
-                'title' => $item['sku'] ?? $item['name'] ?? 'Unknown Item',
+                // Use SKU as the item identifier when available, otherwise fall back to title
+                'title' => $item['sku'] ?? $item['title'] ?? $item['name'] ?? 'Unknown Item',
+                'name' => $item['title'] ?? $item['name'] ?? '',
                 'quantity' => $item['quantity'] ?? 1,
-                'price' => $item['price'] ?? '0.00'
+                'price' => $item['price'] ?? $item['total_price'] ?? '0.00',
+                'description' => $item['description'] ?? ''
             ];
         }
 
         return [
             'db_id' => $dbId,
-            'id' => $shopifyData['id'] ?? $dbId,
-            'order_number' => $shopifyData['name'] ?? $shopifyData['order_number'] ?? "ORD-{$dbId}",
+            // Map new order_id if present
+            'id' => $shopifyData['order_id'] ?? $shopifyData['id'] ?? $dbId,
+            'order_number' => $shopifyData['order_number'] ?? $shopifyData['name'] ?? "ORD-{$dbId}",
             'customer' => [
                 'first_name' => $customer['first_name'] ?? '',
                 'last_name' => $customer['last_name'] ?? '',
@@ -102,10 +107,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 'phone' => $customer['phone'] ?? $billingAddress['phone'] ?? '',
                 'default_address' => [
                     'company' => $billingAddress['company'] ?? '',
-                    'address1' => $billingAddress['address1'] ?? '',
+                    'address1' => $billingAddress['address1'] ?? $billingAddress['address_1'] ?? '',
                     'city' => $billingAddress['city'] ?? '',
                     'province' => $billingAddress['province_code'] ?? $billingAddress['province'] ?? '',
-                    'zip' => $billingAddress['zip'] ?? '',
+                    'zip' => $billingAddress['zip'] ?? $billingAddress['postal_code'] ?? '',
                     'country' => $billingAddress['country'] ?? ''
                 ]
             ],
@@ -278,27 +283,30 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                     if ((string)$li['title'] === (string)$currentItem) { $line = $li; break; }
                 }
             }
-            $itemTitle = $line['name'] ?? $line['title'] ?? $currentItem;
-            $itemPrice = isset($line['price']) ? (float)$line['price'] : 0.0;
-            $itemPrice = number_format($itemPrice, 2, '.', '');
-            error_log("Adding NonInventory item: {$currentItem} with title '{$itemTitle}' and price {$itemPrice}");
-            $xml = '<?xml version="1.0" encoding="utf-8"?>
+                        $itemTitle = $line['name'] ?? $line['title'] ?? $currentItem;
+                        $itemPrice = isset($line['price']) ? (float)$line['price'] : 0.0;
+                        $itemPrice = number_format($itemPrice, 2, '.', '');
+                        $itemDesc = $line['description'] ?? '';
+                        // Compose description: use title and description when available
+                        $descText = $itemTitle . ($itemDesc ? ' - ' . $itemDesc : '');
+                        error_log("Adding NonInventory item: {$currentItem} with title '{$itemTitle}' price {$itemPrice} desc '{$itemDesc}'");
+                        $xml = '<?xml version="1.0" encoding="utf-8"?>
 <?qbxml version="' . $qbxmlVersion . '"?>
 <QBXML>
-  <QBXMLMsgsRq onError="stopOnError">
-    <ItemNonInventoryAddRq requestID="' . $this->generateGUID() . '">
-      <ItemNonInventoryAdd>
-        <Name>' . htmlspecialchars($currentItem, ENT_XML1, 'UTF-8') . '</Name>
-        <SalesOrPurchase>
-          <Desc>' . htmlspecialchars($itemTitle, ENT_XML1, 'UTF-8') . '</Desc>
-          <Price>' . $itemPrice . '</Price>
-          <AccountRef>
-            <FullName>Sales</FullName>
-          </AccountRef>
-        </SalesOrPurchase>
-      </ItemNonInventoryAdd>
-    </ItemNonInventoryAddRq>
-  </QBXMLMsgsRq>
+    <QBXMLMsgsRq onError="stopOnError">
+        <ItemNonInventoryAddRq requestID="' . $this->generateGUID() . '">
+            <ItemNonInventoryAdd>
+                <Name>' . htmlspecialchars($currentItem, ENT_XML1, 'UTF-8') . '</Name>
+                <SalesOrPurchase>
+                    <Desc>' . htmlspecialchars($descText, ENT_XML1, 'UTF-8') . '</Desc>
+                    <Price>' . $itemPrice . '</Price>
+                    <AccountRef>
+                        <FullName>Sales</FullName>
+                    </AccountRef>
+                </SalesOrPurchase>
+            </ItemNonInventoryAdd>
+        </ItemNonInventoryAddRq>
+    </QBXMLMsgsRq>
 </QBXML>';
             error_log("Sending ItemNonInventoryAddRq XML:\n$xml");
             $this->saveState();
@@ -317,13 +325,15 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         <CustomerRef><FullName>' . htmlentities($this->customerName) . '</FullName></CustomerRef>
         <RefNumber>' . htmlentities($order['order_number']) . '</RefNumber>
         <Memo>Static Test Order #' . htmlentities($order['order_number']) . '</Memo>';
-            foreach ($order['line_items'] as $item) {
-                $xml .= '
-        <InvoiceLineAdd>
-          <ItemRef><FullName>' . htmlentities($item['title']) . '</FullName></ItemRef>
-          <Quantity>' . (int)$item['quantity'] . '</Quantity>
-        </InvoiceLineAdd>';
-            }
+                        foreach ($order['line_items'] as $item) {
+                                $lineDesc = $item['description'] ?? $item['name'] ?? $item['title'] ?? '';
+                                $xml .= '
+                <InvoiceLineAdd>
+                    <ItemRef><FullName>' . htmlentities($item['title']) . '</FullName></ItemRef>
+                    <Desc>' . htmlentities($lineDesc) . '</Desc>
+                    <Quantity>' . (int)$item['quantity'] . '</Quantity>
+                </InvoiceLineAdd>';
+                        }
             $xml .= '
       </InvoiceAdd>
     </InvoiceAddRq>
