@@ -35,13 +35,21 @@ try {
     ]);
 
     // Insert query
-    $stmt = $pdo->prepare("
-        INSERT INTO orders_queue (shopify_order_id, payload, status)
-        VALUES (:oid, :payload, 'pending')
+    // Store the exact incoming request body as a JSON string in the `payload` column.
+    // Reason: the DB `payload` column is type JSON and MySQL will normalize objects when
+    // storing JSON values. By encoding the raw request body as a JSON string we preserve
+    // the original bytes/text intact (it will be stored as a JSON string value). When
+    // reading back, decode once to get the raw JSON text, then decode the text to get
+    // the original structure.
+    $stmt = $pdo->prepare("\
+        INSERT INTO orders_queue (shopify_order_id, payload, status)\
+        VALUES (:oid, :payload, 'pending')\
     ");
     $stmt->execute([
         ':oid' => $orderData['id'],
-        ':payload' => json_encode($orderData)
+        // double-encode: encode the raw request string so the DB stores it exactly
+        // as a JSON string value (preserves whitespace, ordering, etc.).
+        ':payload' => json_encode($rawData)
     ]);
 
     logMessage("✅ Insert successful for order ID: " . $orderData['id']);
