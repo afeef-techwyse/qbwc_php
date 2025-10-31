@@ -67,51 +67,55 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     }
 
     private function transformShopifyOrder($shopifyData, $dbId) {
-        $customer = $shopifyData['customer'] ?? null;
-        error_log("Customer data: " . json_encode($customer));
-        $billingAddress = $shopifyData['billing_address'] ?? $shopifyData['shipping_address'] ?? null;
-        error_log("Billing address data: " . json_encode($billingAddress));
-        $lineItems = $shopifyData['line_items'] ?? [];
-        error_log("Line items data: " . json_encode($lineItems)); exit;
+        // Accept new payload: top-level 'customer', 'shipping_address' and 'items'
+    $customer = $shopifyData['customer'] ?? null;
+    error_log("transformShopifyOrder - customer: " . json_encode($customer));
+    $shippingAddress = $shopifyData['shipping_address'] ?? $shopifyData['billing_address'] ?? null;
+    error_log("transformShopifyOrder - shippingAddress: " . json_encode($shippingAddress));
+    $lineItems = $shopifyData['items'] ?? $shopifyData['line_items'] ?? [];
+    error_log("transformShopifyOrder - lineItems: " . json_encode($lineItems));
 
-        if (!$customer && !$billingAddress) {
+        if (!$customer && !$shippingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
             $this->fetchPendingOrders();
         }
-        if(!$customer){
+
+        if (!$customer) {
             $customer = [
-                'first_name' => $billingAddress['first_name'] ?? 'Valued',
-                'last_name' => $billingAddress['last_name'] ?? 'Customer',
-                'email' => $billingAddress['email'] ?? '',
-                'phone' => $billingAddress['phone'] ?? ''
+                'first_name' => $shippingAddress['first_name'] ?? 'Valued',
+                'last_name' => $shippingAddress['last_name'] ?? 'Customer',
+                'email' => $shippingAddress['email'] ?? '',
+                'phone' => $shippingAddress['phone'] ?? ''
             ];
         }
 
         $transformedLineItems = [];
         foreach ($lineItems as $item) {
             $transformedLineItems[] = [
-                'title' => $item['sku'] ?? $item['name'] ?? 'Unknown Item',
-                'quantity' => $item['quantity'] ?? 1,
-                'price' => $item['price'] ?? '0.00'
+                'title' => $item['sku'] ?? $item['title'] ?? $item['name'] ?? 'Unknown Item',
+                'name' => $item['title'] ?? $item['name'] ?? '',
+                'quantity' => isset($item['quantity']) ? (int)$item['quantity'] : 1,
+                'price' => $item['price'] ?? $item['total_price'] ?? '0.00',
+                'description' => $item['description'] ?? ''
             ];
         }
 
         return [
             'db_id' => $dbId,
-            'id' => $shopifyData['id'] ?? $dbId,
-            'order_number' => $shopifyData['name'] ?? $shopifyData['order_number'] ?? "ORD-{$dbId}",
+            'id' => $shopifyData['order_id'] ?? $shopifyData['id'] ?? $dbId,
+            'order_number' => $shopifyData['order_number'] ?? $shopifyData['name'] ?? "ORD-{$dbId}",
             'customer' => [
                 'first_name' => $customer['first_name'] ?? '',
                 'last_name' => $customer['last_name'] ?? '',
                 'email' => $customer['email'] ?? '',
-                'phone' => $customer['phone'] ?? $billingAddress['phone'] ?? '',
+                'phone' => $shippingAddress['phone'] ?? $customer['phone'] ?? '',
                 'default_address' => [
-                    'company' => $billingAddress['company'] ?? '',
-                    'address1' => $billingAddress['address1'] ?? '',
-                    'city' => $billingAddress['city'] ?? '',
-                    'province' => $billingAddress['province_code'] ?? $billingAddress['province'] ?? '',
-                    'zip' => $billingAddress['zip'] ?? '',
-                    'country' => $billingAddress['country'] ?? ''
+                    'company' => $shippingAddress['company'] ?? '',
+                    'address1' => $shippingAddress['address1'] ?? $shippingAddress['address_1'] ?? '',
+                    'city' => $shippingAddress['city'] ?? '',
+                    'province' => $shippingAddress['province'] ?? $shippingAddress['province_code'] ?? '',
+                    'zip' => $shippingAddress['zip'] ?? $shippingAddress['postal_code'] ?? '',
+                    'country' => $shippingAddress['country'] ?? ''
                 ]
             ],
             'line_items' => $transformedLineItems
