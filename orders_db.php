@@ -16,6 +16,8 @@ try {
     logMessage("Raw input: " . $rawData);
 
     $orderData = json_decode($rawData, true);
+    logMessage("Decoded order data: " . $orderData);
+    logMessage("json encoded order data: " . json_encode($orderData));
     if (!$orderData) {
         http_response_code(400);
         logMessage("❌ Invalid JSON input");
