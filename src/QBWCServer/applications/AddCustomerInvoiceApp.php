@@ -68,7 +68,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     private function transformShopifyOrder($shopifyData, $dbId) {
         // Accept new payload: top-level 'customer', 'shipping_address' and 'items'
-    $customer = $shopifyData['customer'] ?? null;
+    $customer = $shopifyData->customer ?? null;
     error_log("transformShopifyOrder - customer: " . json_encode($customer));
     $shippingAddress = $shopifyData['shipping_address'] ?? $shopifyData['billing_address'] ?? null;
     error_log("transformShopifyOrder - shippingAddress: " . json_encode($shippingAddress));
