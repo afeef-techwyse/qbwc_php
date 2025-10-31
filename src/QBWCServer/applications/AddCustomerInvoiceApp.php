@@ -441,6 +441,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             $this->log("InvoiceAdd completed for Order #{$this->orders[$this->currentOrderIndex]['order_number']}.");
 
             if ($this->currentDbOrderId) {
+                error_log('123');
                 $this->updateOrderStatus($this->currentDbOrderId, 'invoice_done');
             }
 
