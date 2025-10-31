@@ -65,10 +65,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     }
 
     private function transformShopifyOrder($shopifyData, $dbId) {
-        // New payload structure uses top-level keys: order_id, order_number, items, shipping_address, customer
+        // Get data from new payload structure
         $customer = $shopifyData['customer'] ?? null;
-        $billingAddress = $shopifyData['shipping_address'] ?? $shopifyData['billing_address'] ?? null;
-        $lineItems = $shopifyData['items'] ?? $shopifyData['line_items'] ?? [];
+        $billingAddress = $shopifyData['shipping_address'] ?? null; // New structure uses shipping_address
+        $lineItems = $shopifyData['items'] ?? []; // New structure uses 'items' array
 
         if (!$customer && !$billingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
@@ -86,12 +86,12 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         $transformedLineItems = [];
         foreach ($lineItems as $item) {
             $transformedLineItems[] = [
-                // Use SKU as the item identifier when available, otherwise fall back to title
-                'title' => $item['sku'] ?? $item['title'] ?? $item['name'] ?? 'Unknown Item',
-                'name' => $item['title'] ?? $item['name'] ?? '',
-                'quantity' => $item['quantity'] ?? 1,
-                'price' => $item['price'] ?? $item['total_price'] ?? '0.00',
-                'description' => $item['description'] ?? ''
+                // Use SKU for QuickBooks item identification
+                'title' => $item['sku'], // SKU is primary identifier for QuickBooks
+                'name' => $item['title'], // Full product title
+                'quantity' => $item['quantity'],
+                'price' => $item['price'],
+                'description' => $item['description'] // Product specifications/details
             ];
         }
 
@@ -104,13 +104,13 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 'first_name' => $customer['first_name'] ?? '',
                 'last_name' => $customer['last_name'] ?? '',
                 'email' => $customer['email'] ?? '',
-                'phone' => $customer['phone'] ?? $billingAddress['phone'] ?? '',
+                'phone' => $billingAddress['phone'] ?? '', // Phone is in shipping_address
                 'default_address' => [
                     'company' => $billingAddress['company'] ?? '',
-                    'address1' => $billingAddress['address1'] ?? $billingAddress['address_1'] ?? '',
+                    'address1' => $billingAddress['address1'] ?? '',
                     'city' => $billingAddress['city'] ?? '',
-                    'province' => $billingAddress['province_code'] ?? $billingAddress['province'] ?? '',
-                    'zip' => $billingAddress['zip'] ?? $billingAddress['postal_code'] ?? '',
+                    'province' => $billingAddress['province'] ?? $billingAddress['province_code'] ?? '', // Province before province_code
+                    'zip' => $billingAddress['zip'] ?? '',
                     'country' => $billingAddress['country'] ?? ''
                 ]
             ],
