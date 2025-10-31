@@ -46,7 +46,7 @@ try {
         VALUES (:oid, :payload, 'pending')\
     ");
     $stmt->execute([
-        ':oid' => $orderData['id'],
+        ':oid' => $orderData['order_id'],
         // double-encode: encode the raw request string so the DB stores it exactly
         // as a JSON string value (preserves whitespace, ordering, etc.).
         ':payload' => json_encode($rawData)
