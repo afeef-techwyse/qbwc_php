@@ -48,8 +48,10 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
             }
 
             $payload = json_decode($row['payload'], true);
+            error_log("Fetched order payload: " . json_encode($payload));
             if ($payload) {
                 $order = $this->transformShopifyOrder($payload, $row['id']);
+                error_log("Fetched transformed order: " . json_encode($order));
                 if ($order) {
                     $this->orders = [$order];
                     $this->log("Fetched pending order: " . json_encode($order));
