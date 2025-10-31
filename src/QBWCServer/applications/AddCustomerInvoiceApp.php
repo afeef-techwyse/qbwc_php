@@ -67,15 +67,29 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     }
 
     private function transformShopifyOrder($shopifyData, $dbId) {
-        // Accept new payload: top-level 'customer', 'shipping_address' and 'items'
-    error_log("transformShopifyOrder - shopifyData: " . json_encode($shopifyData));
-    $customer = $shopifyData['customer'] ?? null;
-    error_log("transformShopifyOrder - customer: " . json_encode($customer));
-    $shippingAddress = $shopifyData['shipping_address'] ?? $shopifyData['billing_address'] ?? null;
-    error_log("transformShopifyOrder - shippingAddress: " . json_encode($shippingAddress));
-    $lineItems = $shopifyData['items'] ?? $shopifyData['line_items'] ?? [];
-    error_log("transformShopifyOrder - lineItems: " . json_encode($lineItems));
+        error_log("transformShopifyOrder - raw shopifyData type: " . gettype($shopifyData));
+        
+        // Handle double-encoded JSON strings
+        if (is_string($shopifyData)) {
+            error_log("transformShopifyOrder - attempting to decode JSON string");
+            $decoded = json_decode($shopifyData, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $shopifyData = $decoded;
+                error_log("transformShopifyOrder - successfully decoded JSON string");
+            } else {
+                error_log("transformShopifyOrder - JSON decode error: " . json_last_error_msg());
+            }
+        }
+        error_log("transformShopifyOrder - shopifyData after decode: " . json_encode($shopifyData));
 
+        // Extract data from decoded payload
+        $customer = $shopifyData['customer'] ?? null;
+        error_log("transformShopifyOrder - customer: " . json_encode($customer));
+        $shippingAddress = $shopifyData['shipping_address'] ?? $shopifyData['billing_address'] ?? null;
+        error_log("transformShopifyOrder - shippingAddress: " . json_encode($shippingAddress));
+        $lineItems = $shopifyData['items'] ?? $shopifyData['line_items'] ?? [];
+        error_log("transformShopifyOrder - lineItems: " . json_encode($lineItems));
+        exit;
         if (!$customer && !$shippingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
             $this->fetchPendingOrders();
