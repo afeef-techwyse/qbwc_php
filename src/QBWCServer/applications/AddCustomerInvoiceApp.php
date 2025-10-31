@@ -89,7 +89,6 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
         error_log("transformShopifyOrder - shippingAddress: " . json_encode($shippingAddress));
         $lineItems = $shopifyData['items'] ?? $shopifyData['line_items'] ?? [];
         error_log("transformShopifyOrder - lineItems: " . json_encode($lineItems));
-        exit;
         if (!$customer && !$shippingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
             $this->fetchPendingOrders();
