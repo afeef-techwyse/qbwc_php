@@ -41,18 +41,20 @@ try {
     // the original bytes/text intact (it will be stored as a JSON string value). When
     // reading back, decode once to get the raw JSON text, then decode the text to get
     // the original structure.
-    $stmt = $pdo->prepare("\
-        INSERT INTO orders_queue (shopify_order_id, payload, status)\
-        VALUES (:oid, :payload, 'pending')\
-    ");
+    // Use a plain string (no backslash-escaped newlines) so PDO receives valid SQL.
+    $stmt = $pdo->prepare(
+        "INSERT INTO orders_queue (shopify_order_id, payload, status) VALUES (:oid, :payload, 'pending')"
+    );
     $stmt->execute([
-        ':oid' => $orderData['order_id'],
+        ':oid' => isset($orderData['order_id']) ? $orderData['order_id'] : ($orderData['id'] ?? null),
         // double-encode: encode the raw request string so the DB stores it exactly
         // as a JSON string value (preserves whitespace, ordering, etc.).
         ':payload' => json_encode($rawData)
     ]);
 
-    logMessage("✅ Insert successful for order ID: " . $orderData['id']);
+    // Log the inserted order id (prefer order_id if available)
+    $insertedOid = isset($orderData['order_id']) ? $orderData['order_id'] : ($orderData['id'] ?? 'unknown');
+    logMessage("✅ Insert successful for order ID: " . $insertedOid);
 
     http_response_code(200);
     echo "OK";
