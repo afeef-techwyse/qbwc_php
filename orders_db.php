@@ -7,7 +7,7 @@ $logFile = 'order_log.txt';
 function logMessage($message) {
     global $logFile;
     $timestamp = date('Y-m-d H:i:s');
-    file_put_contents($logFile, "[$timestamp] $message\n", FILE_APPEND);
+    error_log($logFile, "[$timestamp] $message\n", FILE_APPEND);
 }
 
 try {
