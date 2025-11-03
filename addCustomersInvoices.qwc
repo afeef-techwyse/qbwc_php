@@ -6,8 +6,8 @@
     <AppDescription>Add Invoices to QB</AppDescription>
     <AppSupport>https://ptlqbwc.wysework.net</AppSupport>
     <UserName>Admin</UserName>
-    <OwnerID>{90A44FB7-33D6-4815-AC85-AC86A7E71121}</OwnerID>
-    <FileID>{57F3B9B6-86F6-4FCC-B1FF-967DE1813121}</FileID>
+    <OwnerID>{90A44FB7-33D6-4815-AC85-AC86A7E71132}</OwnerID>
+    <FileID>{57F3B9B6-86F6-4FCC-B1FF-967DE1813132}</FileID>
     <QBType>QBFS</QBType>
     <IsReadOnly>false</IsReadOnly>
 </QBWCXML>
