@@ -2,9 +2,9 @@
 <QBWCXML>
     <AppName>Invoices Application</AppName>
     <AppID></AppID>
-    <AppURL>https://qbwc.duckdns.org/qbwc/examples/addCustomerInvoice.php</AppURL>
+    <AppURL>https://ptlqbwc.wysework.net/qbwc/examples/addCustomerInvoice.php</AppURL>
     <AppDescription>Add Invoices to QB</AppDescription>
-    <AppSupport>https://qbwc.duckdns.org/qbwc</AppSupport>
+    <AppSupport>https://ptlqbwc.wysework.net</AppSupport>
     <UserName>Admin</UserName>
     <OwnerID>{90A44FB7-33D6-4815-AC85-AC86A7E71121}</OwnerID>
     <FileID>{57F3B9B6-86F6-4FCC-B1FF-967DE1813121}</FileID>
