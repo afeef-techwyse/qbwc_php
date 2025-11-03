@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <QBWCXML>
-    <AppName>Invoices Application</AppName>
+    <AppName>Invoices Application New</AppName>
     <AppID></AppID>
     <AppURL>https://ptlqbwc.wysework.net/qbwc/examples/addCustomerInvoice.php</AppURL>
     <AppDescription>Add Invoices to QB</AppDescription>
