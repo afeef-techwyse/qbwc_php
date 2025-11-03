@@ -61,8 +61,8 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
                 }
             }
 
-            error_log("Fetched order payload (raw): " . substr($payload, 0, 1000));
-            error_log("Fetched order payload (decoded): " . json_encode($decoded));
+            log("Fetched order payload (raw): " . substr($payload, 0, 1000));
+            log("Fetched order payload (decoded): " . json_encode($decoded));
 
             if ($decoded) {
                 $order = $this->transformShopifyOrder($decoded, $row['id']);
@@ -82,28 +82,28 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
 
     private function transformShopifyOrder($shopifyData, $dbId)
     {
-        error_log("transformShopifyOrder - raw shopifyData type: " . gettype($shopifyData));
+        log("transformShopifyOrder - raw shopifyData type: " . gettype($shopifyData));
 
         // If input is a JSON string, attempt to decode
         if (is_string($shopifyData)) {
-            error_log("transformShopifyOrder - attempting to decode JSON string");
+            log("transformShopifyOrder - attempting to decode JSON string");
             $decoded = json_decode($shopifyData, true);
             if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
                 $shopifyData = $decoded;
-                error_log("transformShopifyOrder - successfully decoded JSON string");
+                log("transformShopifyOrder - successfully decoded JSON string");
             } else {
-                error_log("transformShopifyOrder - JSON decode error: " . json_last_error_msg());
+                log("transformShopifyOrder - JSON decode error: " . json_last_error_msg());
             }
         }
 
-        error_log("transformShopifyOrder - shopifyData after decode: " . json_encode($shopifyData));
+        log("transformShopifyOrder - shopifyData after decode: " . json_encode($shopifyData));
 
         $customer = $shopifyData['customer'] ?? null;
-        error_log("transformShopifyOrder - customer: " . json_encode($customer));
+        log("transformShopifyOrder - customer: " . json_encode($customer));
         $shippingAddress = $shopifyData['shipping_address'] ?? $shopifyData['billing_address'] ?? null;
-        error_log("transformShopifyOrder - shippingAddress: " . json_encode($shippingAddress));
+        log("transformShopifyOrder - shippingAddress: " . json_encode($shippingAddress));
         $lineItems = $shopifyData['items'] ?? $shopifyData['line_items'] ?? [];
-        error_log("transformShopifyOrder - lineItems: " . json_encode($lineItems));
+        log("transformShopifyOrder - lineItems: " . json_encode($lineItems));
 
         if (!$customer && !$shippingAddress) {
             $this->log("Incomplete customer/address data for order ID: {$dbId}");
@@ -219,7 +219,7 @@ class AddCustomerInvoiceApp extends AbstractQBWCApplication
     // ---------------------- Logging ----------------------
     private function log($msg)
     {
-        error_log($msg . ' at ' . date('Y-m-d H:i:s'));
+        file_put_contents('qbwc_add_customer_invoice_app.log', $msg . ' at ' . date('Y-m-d H:i:s') . "\n", FILE_APPEND);
     }
 
     // ---------------------- QBWC Methods ----------------------
